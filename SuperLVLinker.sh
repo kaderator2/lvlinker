@@ -453,7 +453,7 @@ symlink_directories() {
                         game_dir="$found_dir"
                         break
                     fi
-                }
+                fi
             fi
         done
         
