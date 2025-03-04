@@ -268,8 +268,10 @@ symlink_directories() {
 
         # Game files symlink
         echo -n "  Symlinking game files... "
-        # Find the common directory (one level up from compatdata)
-        common_dir=$(dirname "$(dirname "$game_compatdata_dir")")/common
+        # Find the steamapps directory (two levels up from compatdata)
+        steamapps_dir=$(dirname "$(dirname "$game_compatdata_dir")")
+        common_dir="$steamapps_dir/common"
+        
         if [ -d "$common_dir" ]; then
             # Find the game directory (using the game name from valid_games)
             game_name=$(echo "${valid_games[@]}" | grep -oP "$game_id:\K[^:]+")
@@ -280,6 +282,13 @@ symlink_directories() {
             else
                 # Try case-insensitive match if exact match fails
                 game_dir=$(find "$common_dir" -maxdepth 1 -type d -iname "$game_name" -print -quit)
+            fi
+            
+            # If still not found, try alternative naming patterns
+            if [ -z "$game_dir" ]; then
+                # Try removing spaces and special characters
+                alt_name=$(echo "$game_name" | tr -d '[:space:]-' | tr '[:upper:]' '[:lower:]')
+                game_dir=$(find "$common_dir" -maxdepth 1 -type d -iname "*$alt_name*" -print -quit)
             fi
             
             if [ -n "$game_dir" ] && [ -d "$game_dir" ]; then
