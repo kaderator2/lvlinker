@@ -639,9 +639,22 @@ symlink_directories() {
     echo "Symlinking completed for all selected games."
 }
 
+# Function to clean up Wine processes
+cleanup_wine() {
+    echo "Cleaning up Wine processes..."
+    wineserver -k || true
+    pkill -f "wineserver" || true
+    pkill -f "wine" || true
+    pkill -f "Vortex.exe" || true
+    echo "Wine processes cleaned up."
+}
+
 # Function to launch Vortex
 launch_vortex() {
     echo "Launching Vortex..."
+    
+    # Clean up any existing Wine processes first
+    cleanup_wine
     
     # Find Vortex executable
     vortex_exe=$(find "$WINE_PREFIX" -name "Vortex.exe" -print -quit)
@@ -651,12 +664,24 @@ launch_vortex() {
         exit 1
     fi
     
-    # Launch Vortex
+    # Launch Vortex with proper environment
     export WINEPREFIX="$WINE_PREFIX"
     export WINEARCH="win64"
-    wine "$vortex_exe" &
+    export WINEDEBUG="-all"
+    export WINEDLLOVERRIDES="winemenubuilder.exe=d"
+    
+    # Create a clean environment
+    env -i \
+        WINEPREFIX="$WINE_PREFIX" \
+        WINEARCH="win64" \
+        WINEDEBUG="-all" \
+        WINEDLLOVERRIDES="winemenubuilder.exe=d" \
+        wine "$vortex_exe" &
     
     echo "Vortex launched successfully!"
+    
+    # Add cleanup trap
+    trap cleanup_wine EXIT
 }
 
 # Function to load previously selected games
