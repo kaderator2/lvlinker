@@ -95,8 +95,12 @@ check_required_libs() {
     
     if [ ${#missing_64bit[@]} -gt 0 ] || [ ${#missing_32bit[@]} -gt 0 ]; then
         echo "You can install them with:"
-        echo "  sudo dpkg --add-architecture i386 && sudo apt update && \\"
-        echo "  sudo apt install ${missing_64bit[*]} ${missing_32bit[*]}"
+        if command -v pacman &> /dev/null; then
+            echo "  sudo pacman -S ${missing_64bit[*]} ${missing_32bit[*]}"
+        else
+            echo "  sudo dpkg --add-architecture i386 && sudo apt update && \\"
+            echo "  sudo apt install ${missing_64bit[*]} ${missing_32bit[*]}"
+        fi
         exit 1
     fi
     
