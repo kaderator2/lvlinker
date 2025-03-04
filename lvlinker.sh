@@ -294,31 +294,30 @@ symlink_directories() {
                 if [ "$verbose" = true ]; then
                     echo "  Found game directory at exact path: $game_dir"
                 fi
-            
-            # If exact path not found, try case-insensitive search
-            if [ ! -d "$game_dir" ]; then
+            else
+                # If exact path not found, try case-insensitive search
                 if [ "$verbose" = true ]; then
                     echo "  Trying case-insensitive search for: $game_name"
                 fi
                 game_dir=$(find "$common_dir" -maxdepth 1 -type d -iname "$game_name" -print -quit)
-            fi
-            
-            # If still not found, try alternative naming patterns
-            if [ ! -d "$game_dir" ]; then
-                if [ "$verbose" = true ]; then
-                    echo "  Trying alternative naming patterns"
+                
+                # If still not found, try alternative naming patterns
+                if [ ! -d "$game_dir" ]; then
+                    if [ "$verbose" = true ]; then
+                        echo "  Trying alternative naming patterns"
+                    fi
+                    # Try removing spaces and special characters
+                    alt_name=$(echo "$game_name" | tr -d '[:space:]-' | tr '[:upper:]' '[:lower:]')
+                    game_dir=$(find "$common_dir" -maxdepth 1 -type d -iname "*$alt_name*" -print -quit)
                 fi
-                # Try removing spaces and special characters
-                alt_name=$(echo "$game_name" | tr -d '[:space:]-' | tr '[:upper:]' '[:lower:]')
-                game_dir=$(find "$common_dir" -maxdepth 1 -type d -iname "*$alt_name*" -print -quit)
-            fi
-            
-            # If still not found, try looking for the game ID in the directory name
-            if [ ! -d "$game_dir" ]; then
-                if [ "$verbose" = true ]; then
-                    echo "  Trying to find directory containing game ID: $game_id"
+                
+                # If still not found, try looking for the game ID in the directory name
+                if [ ! -d "$game_dir" ]; then
+                    if [ "$verbose" = true ]; then
+                        echo "  Trying to find directory containing game ID: $game_id"
+                    fi
+                    game_dir=$(find "$common_dir" -maxdepth 1 -type d -name "*$game_id*" -print -quit)
                 fi
-                game_dir=$(find "$common_dir" -maxdepth 1 -type d -name "*$game_id*" -print -quit)
             fi
             
             if [ -n "$game_dir" ] && [ -d "$game_dir" ]; then
