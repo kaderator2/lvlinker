@@ -221,11 +221,27 @@ setup_wine_prefix() {
         exit 1
     fi
 
-    # Enable symlink support in Wine
-    echo "Enabling symlink support in Wine..."
+    # Enable and configure symlink support in Wine
+    echo "Configuring Wine for better symlink support..."
     wine reg add "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\FileSystem" /v "NtfsDisable8dot3NameCreation" /t REG_DWORD /d 0 /f >/dev/null 2>&1
     wine reg add "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\FileSystem" /v "NtfsAllowExtendedCharacterIn8dot3Name" /t REG_DWORD /d 1 /f >/dev/null 2>&1
     wine reg add "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\FileSystem" /v "SymlinkLocalToLocalEvaluation" /t REG_DWORD /d 1 /f >/dev/null 2>&1
+    
+    # Enable developer mode for better symlink handling
+    wine reg add "HKEY_CURRENT_USER\\Software\\Wine" /v "Developer" /t REG_SZ /d "1" /f >/dev/null 2>&1
+    
+    # Set Windows version to Windows 10 for better compatibility
+    winecfg -v win10 >/dev/null 2>&1
+    
+    # Create a custom wineprefix.ini with improved symlink settings
+    cat > "$WINE_PREFIX/wineprefix.ini" <<EOF
+[Version]
+Signature = "\$Windows NT\$"
+Class = "Wine"
+[System]
+SymlinkEvaluation = "LocalToLocal"
+CaseSensitive = 0
+EOF
     
     # Install required dependencies with winetricks if available
     if command -v winetricks &> /dev/null; then
@@ -589,10 +605,26 @@ symlink_directories() {
         else
             # Create Windows-style Steam directory structure in Wine prefix
             mkdir -p "$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common"
-            ln -sf "$game_dir" "$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common/$(basename "$game_dir")" || {
-                echo "Failed to symlink game files for $game_name"
-                exit 1
-            }
+            
+            # Convert Linux path to Windows-style path for better compatibility
+            windows_game_dir=$(winepath -w "$game_dir")
+            
+            # Create the symlink using mklink through Wine
+            wine cmd /c "mklink /D \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$(basename "$game_dir")\" \"$windows_game_dir\"" >/dev/null 2>&1
+            
+            # Verify the symlink was created
+            if [ ! -L "$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common/$(basename "$game_dir")" ]; then
+                echo "Failed to create proper symlink for $game_name"
+                echo "Attempting alternative method..."
+                
+                # Try creating junction point instead
+                wine cmd /c "mklink /J \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$(basename "$game_dir")\" \"$windows_game_dir\"" >/dev/null 2>&1
+                
+                if [ $? -ne 0 ]; then
+                    echo "Failed to create junction point for $game_name"
+                    exit 1
+                fi
+            fi
             echo "Done!"
         fi
         
