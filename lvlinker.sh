@@ -37,7 +37,22 @@ get_game_name() {
         return 0
     fi
     
-    # Query Steam API
+    # First try to get name from local manifest file
+    for compatdata in "${DEFAULT_COMPATDATA[@]}"; do
+        local steamapps_dir=$(dirname "$(dirname "$compatdata")")
+        local manifest_file="$steamapps_dir/appmanifest_$appid.acf"
+        
+        if [ -f "$manifest_file" ]; then
+            local name=$(grep -oP '"name"\s+"\K[^"]+' "$manifest_file")
+            if [ -n "$name" ]; then
+                echo "$name" > "$cache_file"
+                echo "$name"
+                return 0
+            fi
+        fi
+    done
+    
+    # If local manifest not found, query Steam API
     local url="https://store.steampowered.com/api/appdetails?appids=$appid"
     local response=$(curl -s "$url" | tr -d '\0')
     
@@ -273,8 +288,14 @@ symlink_directories() {
         common_dir="$steamapps_dir/common"
         
         if [ -d "$common_dir" ]; then
-            # Find the game directory (using the game name from valid_games)
-            game_name=$(echo "${valid_games[@]}" | grep -oP "$game_id:\K[^:]+")
+            # Extract game name from valid_games array
+            game_name=""
+            for game in "${valid_games[@]}"; do
+                if [[ "$game" == "$game_id:"* ]]; then
+                    game_name=$(echo "$game" | cut -d: -f2-)
+                    break
+                fi
+            done
             
             # Debug output for paths
             if [ "$verbose" = true ]; then
@@ -288,35 +309,85 @@ symlink_directories() {
                 echo "  Game Compatdata Dir: $game_compatdata_dir"
             fi
             
-            # First try the exact path
-            game_dir="$common_dir/$game_name"
-            if [ -d "$game_dir" ]; then
+            # Try multiple methods to find the game directory
+            game_dir=""
+            
+            # Method 1: Try the exact path
+            if [ -n "$game_name" ] && [ -d "$common_dir/$game_name" ]; then
+                game_dir="$common_dir/$game_name"
                 if [ "$verbose" = true ]; then
                     echo "  Found game directory at exact path: $game_dir"
                 fi
-            else
-                # If exact path not found, try case-insensitive search
+            # Method 2: Try using the Steam manifest file
+            elif [ -f "$steamapps_dir/appmanifest_$game_id.acf" ]; then
+                install_dir=$(grep -oP '"installdir"\s+"\K[^"]+' "$steamapps_dir/appmanifest_$game_id.acf")
+                if [ -n "$install_dir" ] && [ -d "$common_dir/$install_dir" ]; then
+                    game_dir="$common_dir/$install_dir"
+                    if [ "$verbose" = true ]; then
+                        echo "  Found game directory from manifest: $game_dir"
+                    fi
+                fi
+            fi
+            
+            # Method 3: If still not found, try case-insensitive search
+            if [ -z "$game_dir" ] && [ -n "$game_name" ]; then
                 if [ "$verbose" = true ]; then
                     echo "  Trying case-insensitive search for: $game_name"
                 fi
-                game_dir=$(find "$common_dir" -maxdepth 1 -type d -iname "$game_name" -print -quit)
-                
-                # If still not found, try alternative naming patterns
-                if [ ! -d "$game_dir" ]; then
-                    if [ "$verbose" = true ]; then
-                        echo "  Trying alternative naming patterns"
-                    fi
-                    # Try removing spaces and special characters
-                    alt_name=$(echo "$game_name" | tr -d '[:space:]-' | tr '[:upper:]' '[:lower:]')
-                    game_dir=$(find "$common_dir" -maxdepth 1 -type d -iname "*$alt_name*" -print -quit)
+                found_dir=$(find "$common_dir" -maxdepth 1 -type d -iname "$game_name" -print -quit)
+                if [ -n "$found_dir" ] && [ -d "$found_dir" ]; then
+                    game_dir="$found_dir"
                 fi
+            fi
+            
+            # Method 4: Try alternative naming patterns
+            if [ -z "$game_dir" ] && [ -n "$game_name" ]; then
+                if [ "$verbose" = true ]; then
+                    echo "  Trying alternative naming patterns"
+                fi
+                # Try removing spaces and special characters
+                alt_name=$(echo "$game_name" | tr -d '[:space:]-' | tr '[:upper:]' '[:lower:]')
+                found_dir=$(find "$common_dir" -maxdepth 1 -type d -iname "*$alt_name*" -print -quit)
+                if [ -n "$found_dir" ] && [ -d "$found_dir" ]; then
+                    game_dir="$found_dir"
+                fi
+            fi
+            
+            # Method 5: Try looking for the game ID in the directory name
+            if [ -z "$game_dir" ]; then
+                if [ "$verbose" = true ]; then
+                    echo "  Trying to find directory containing game ID: $game_id"
+                fi
+                found_dir=$(find "$common_dir" -maxdepth 1 -type d -name "*$game_id*" -print -quit)
+                if [ -n "$found_dir" ] && [ -d "$found_dir" ]; then
+                    game_dir="$found_dir"
+                fi
+            fi
+            
+            # Method 6: Last resort - ask the user to select from available directories
+            if [ -z "$game_dir" ]; then
+                echo -e "\nCould not automatically find game directory for ID $game_id ($game_name)"
+                echo "Available directories in $common_dir:"
                 
-                # If still not found, try looking for the game ID in the directory name
-                if [ ! -d "$game_dir" ]; then
-                    if [ "$verbose" = true ]; then
-                        echo "  Trying to find directory containing game ID: $game_id"
+                # List all directories in common_dir
+                available_dirs=()
+                i=1
+                while IFS= read -r dir; do
+                    available_dirs+=("$dir")
+                    echo "$i) $(basename "$dir")"
+                    i=$((i+1))
+                done < <(find "$common_dir" -maxdepth 1 -type d -not -path "$common_dir" | sort)
+                
+                if [ ${#available_dirs[@]} -gt 0 ]; then
+                    read -p "Enter the number of the correct game directory (or 0 to skip): " dir_sel
+                    if [[ "$dir_sel" =~ ^[0-9]+$ ]] && [ "$dir_sel" -gt 0 ] && [ "$dir_sel" -le "${#available_dirs[@]}" ]; then
+                        game_dir="${available_dirs[$((dir_sel-1))]}"
+                        echo "Selected: $game_dir"
+                    else
+                        echo "Skipping game directory symlink for $game_id"
                     fi
-                    game_dir=$(find "$common_dir" -maxdepth 1 -type d -name "*$game_id*" -print -quit)
+                else
+                    echo "No directories found in $common_dir"
                 fi
             fi
             
