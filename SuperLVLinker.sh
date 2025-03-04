@@ -664,6 +664,12 @@ launch_vortex() {
         exit 1
     fi
     
+    # Ensure X server is accessible
+    if ! xhost >/dev/null 2>&1; then
+        echo "X server access not available, attempting to fix..."
+        xhost +local: >/dev/null 2>&1
+    fi
+    
     # Ensure XDG_RUNTIME_DIR is set
     if [ -z "$XDG_RUNTIME_DIR" ]; then
         export XDG_RUNTIME_DIR="/run/user/$(id -u)"
@@ -674,10 +680,10 @@ launch_vortex() {
         fi
     fi
     
-    # Launch Vortex with proper environment
+    # Set up Wine environment
     export WINEPREFIX="$WINE_PREFIX"
     export WINEARCH="win64"
-    export WINEDEBUG="-all"
+    export WINEDEBUG="-all,err+all,fixme+all"
     export WINEDLLOVERRIDES="winemenubuilder.exe=d"
     export DISPLAY=":0"
     export PULSE_SERVER="unix:$XDG_RUNTIME_DIR/pulse/native"
@@ -690,18 +696,21 @@ launch_vortex() {
         PATH="/usr/bin:/bin:/usr/local/bin" \
         WINEPREFIX="$WINE_PREFIX" \
         WINEARCH="win64" \
-        WINEDEBUG="-all" \
+        WINEDEBUG="-all,err+all,fixme+all" \
         WINEDLLOVERRIDES="winemenubuilder.exe=d" \
         DISPLAY="$DISPLAY" \
         XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
         PULSE_SERVER="$PULSE_SERVER" \
-        wine "$vortex_exe"
+        LANG="en_US.UTF-8" \
+        LC_ALL="en_US.UTF-8" \
+        wine "$vortex_exe" > "$LOG_FILE" 2>&1
     
     # Check if Vortex exited successfully
     if [ $? -eq 0 ]; then
         echo "Vortex exited successfully"
     else
         echo "Vortex exited with an error"
+        echo "Check the log file at $LOG_FILE for more details"
     fi
     
     # Clean up after Vortex exits
