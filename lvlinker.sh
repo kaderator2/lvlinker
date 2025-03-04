@@ -83,16 +83,29 @@ scan_compatdata() {
 
 # Function to ask user for Vortex compatdata ID
 get_vortex_dir() {
-    echo "Please select the Vortex installation from the following compatdata folders:"
-    local i=1
+    # Create array of non-Steam folders
+    non_steam_folders=()
     for id in "${game_ids[@]}"; do
+        if ! grep -q "^$id:" <<< "${valid_games[*]}"; then
+            non_steam_folders+=("$id")
+        fi
+    done
+    
+    if [ ${#non_steam_folders[@]} -eq 0 ]; then
+        echo "Error: No non-Steam folders found. Vortex should be in a separate compatdata folder."
+        exit 1
+    fi
+    
+    echo "Please select the Vortex installation from the following non-Steam folders:"
+    local i=1
+    for id in "${non_steam_folders[@]}"; do
         printf "%d) %s\n" "$i" "$id"
         i=$((i+1))
     done
     
     read -p "Enter the number of the Vortex installation: " vortex_sel
-    if [[ "$vortex_sel" =~ ^[0-9]+$ ]] && [ "$vortex_sel" -le "${#game_ids[@]}" ]; then
-        vortex_id="${game_ids[$((vortex_sel-1))]}"
+    if [[ "$vortex_sel" =~ ^[0-9]+$ ]] && [ "$vortex_sel" -le "${#non_steam_folders[@]}" ]; then
+        vortex_id="${non_steam_folders[$((vortex_sel-1))]}"
         vortex_dir="$STEAM_COMPATDATA/$vortex_id"
         echo "Vortex directory set to $vortex_dir"
     else
