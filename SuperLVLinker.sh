@@ -51,14 +51,12 @@ check_required_libs() {
     required_64bit_libs=(
         "glibc"
         "gcc-libs"
-        "libstdc++"
     )
     
     # Required 32-bit libraries for compatibility
     required_32bit_libs=(
         "lib32-glibc"
         "lib32-gcc-libs"
-        "lib32-libstdc++"
     )
     
     # Check 64-bit libraries
@@ -96,7 +94,7 @@ check_required_libs() {
     if [ ${#missing_64bit[@]} -gt 0 ] || [ ${#missing_32bit[@]} -gt 0 ]; then
         echo "You can install them with:"
         if command -v pacman &> /dev/null; then
-            echo "  sudo pacman -S ${missing_64bit[*]} ${missing_32bit[*]}"
+            echo "  sudo pacman -S ${missing_64bit[*]} ${missing_32bit[*]} wine-staging winetricks"
         else
             echo "  sudo dpkg --add-architecture i386 && sudo apt update && \\"
             echo "  sudo apt install ${missing_64bit[*]} ${missing_32bit[*]}"
