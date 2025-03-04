@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration
-VORTEX_INSTALLER_URL="https://github.com/Nexus-Mods/Vortex/releases/latest/download/vortex-setup.exe"
+VORTEX_INSTALLER_URL="https://github.com/Nexus-Mods/Vortex/releases/download/v1.13.7/vortex-setup-1.13.7.exe"
 WINE_PREFIX="$HOME/.vortex_wine"
 STEAM_COMPATDATA="$HOME/.local/share/Steam/steamapps/compatdata"
 VORTEX_COMPATDATA_ID="1000000"  # Default ID for Vortex in compatdata
@@ -62,7 +62,7 @@ download_vortex() {
     fi
     
     echo "Downloading latest Vortex installer..."
-    installer_path="$HOME/Downloads/vortex-setup.exe"
+    installer_path="$HOME/Downloads/vortex-setup-1.13.7.exe"
     
     if curl -L -o "$installer_path" "$VORTEX_INSTALLER_URL"; then
         echo "Downloaded Vortex installer to $installer_path"
