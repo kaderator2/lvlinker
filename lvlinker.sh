@@ -238,6 +238,10 @@ symlink_directories() {
         
         echo "Processing game ID: $game_id"
         
+        # Create necessary directory structure
+        mkdir -p "$game_compatdata_dir/pfx/drive_c/users/steamuser"
+        mkdir -p "$vortex_compatdata_dir/pfx/drive_c/users/steamuser"
+
         # AppData symlink
         echo -n "  Symlinking AppData... "
         if [ "$dry_run" = true ]; then
