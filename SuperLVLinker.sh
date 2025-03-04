@@ -43,16 +43,57 @@ usage() {
     exit 1
 }
 
+# Function to check for 32-bit libraries
+check_32bit_libs() {
+    echo "Checking for required 32-bit libraries..."
+    
+    # Check for common required 32-bit libraries
+    missing_libs=()
+    for lib in libc6:i386 libstdc++6:i386 libgcc-s1:i386; do
+        if ! dpkg -l "$lib" >/dev/null 2>&1; then
+            missing_libs+=("$lib")
+        fi
+    done
+    
+    if [ ${#missing_libs[@]} -gt 0 ]; then
+        echo "Missing required 32-bit libraries:"
+        for lib in "${missing_libs[@]}"; do
+            echo "  - $lib"
+        done
+        echo "You can install them with:"
+        echo "  sudo dpkg --add-architecture i386 && sudo apt update && sudo apt install ${missing_libs[*]}"
+        exit 1
+    fi
+    
+    echo "All required 32-bit libraries are installed."
+}
+
 # Function to check dependencies
 check_dependencies() {
     echo "Checking dependencies..."
+    check_32bit_libs
 
-    # Check for Wine
+    # Check for Wine and validate version
     if ! command -v wine &> /dev/null; then
         echo "Error: Wine is not installed. Please install Wine first."
         echo "You can install it with: sudo pacman -S wine (Arch) or sudo apt install wine (Debian/Ubuntu)"
         exit 1
     fi
+    
+    # Verify Wine version
+    wine_version=$(wine --version 2>/dev/null | grep -oP 'wine-\K[0-9.]+')
+    if [ -z "$wine_version" ]; then
+        echo "Error: Could not determine Wine version"
+        exit 1
+    fi
+    
+    # Check if Wine version is >= 7.0
+    if ! printf '%s\n7.0\n' "$wine_version" | sort -V -C; then
+        echo "Error: Wine version $wine_version is too old. Please upgrade to Wine 7.0 or newer."
+        exit 1
+    fi
+    
+    echo "Using Wine version $wine_version"
 
     # Check for winbind (needed for NTLM authentication)
     if ! command -v ntlm_auth &> /dev/null; then
@@ -100,13 +141,25 @@ download_vortex() {
 setup_wine_prefix() {
     echo "Setting up Wine prefix for Vortex at $WINE_PREFIX..."
 
-    # Check if directory already exists
+    # Check if directory already exists and is a valid Wine prefix
     if [ -d "$WINE_PREFIX" ]; then
         echo "Warning: Wine prefix directory already exists at $WINE_PREFIX"
-        read -p "Do you want to overwrite it? (y/n): " confirm
-        if [ "$confirm" != "y" ]; then
-            echo "Using existing Wine prefix."
-            return 0
+        
+        # Check if it's a valid Wine prefix
+        if [ -f "$WINE_PREFIX/system.reg" ]; then
+            echo "Existing Wine prefix appears valid"
+            read -p "Do you want to overwrite it? (y/n): " confirm
+            if [ "$confirm" != "y" ]; then
+                echo "Using existing Wine prefix."
+                return 0
+            fi
+        else
+            echo "Warning: Directory exists but doesn't appear to be a valid Wine prefix"
+            read -p "Do you want to remove it and create a new prefix? (y/n): " confirm
+            if [ "$confirm" != "y" ]; then
+                echo "Aborting."
+                exit 1
+            fi
         fi
 
         # Backup existing directory
@@ -120,8 +173,16 @@ setup_wine_prefix() {
     export WINEPREFIX="$WINE_PREFIX"
     export WINEARCH="win64"
     
-    # Initialize the prefix
-    wine wineboot --init
+    # Initialize the prefix with error handling
+    echo "Initializing Wine prefix..."
+    if ! wine wineboot --init >/dev/null 2>&1; then
+        echo "Error: Failed to initialize Wine prefix"
+        echo "This could be due to:"
+        echo "1. Missing 32-bit libraries (try: sudo dpkg --add-architecture i386 && sudo apt update)"
+        echo "2. Missing Wine dependencies (try: sudo apt install wine32 wine64)"
+        echo "3. Corrupted Wine installation"
+        exit 1
+    fi
     
     # Install required dependencies with winetricks if available
     if command -v winetricks &> /dev/null; then
