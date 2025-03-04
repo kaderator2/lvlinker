@@ -183,6 +183,12 @@ setup_wine_prefix() {
         echo "3. Corrupted Wine installation"
         exit 1
     fi
+
+    # Enable symlink support in Wine
+    echo "Enabling symlink support in Wine..."
+    wine reg add "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\FileSystem" /v "NtfsDisable8dot3NameCreation" /t REG_DWORD /d 0 /f >/dev/null 2>&1
+    wine reg add "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\FileSystem" /v "NtfsAllowExtendedCharacterIn8dot3Name" /t REG_DWORD /d 1 /f >/dev/null 2>&1
+    wine reg add "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\FileSystem" /v "SymlinkLocalToLocalEvaluation" /t REG_DWORD /d 1 /f >/dev/null 2>&1
     
     # Install required dependencies with winetricks if available
     if command -v winetricks &> /dev/null; then
