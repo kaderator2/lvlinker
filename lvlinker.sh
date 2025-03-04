@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration
-STEAMDB_URL="https://steamdb.info/apps/"
+STEAMCMD_APP_LIST="https://api.steampowered.com/ISteamApps/GetAppList/v2/"
 STEAM_COMPATDATA="$HOME/.local/share/Steam/steamapps/compatdata"
 BACKUP_DIR="$HOME/vortex_backups"
 LOG_FILE="/tmp/lvlinker.log"
@@ -20,17 +20,20 @@ usage() {
     exit 1
 }
 
-# Function to fetch Steam game IDs from SteamDB
-fetch_steam_game_ids() {
-    echo -n "Fetching Steam game IDs from SteamDB... "
-    if ! curl -s "$STEAMDB_URL" | grep -oP 'data-appid="\K[0-9]+' | sort -u > /tmp/steam_game_ids.txt; then
-        echo "Failed to fetch game IDs from SteamDB"
+# Function to fetch Steam game list
+fetch_steam_games() {
+    echo -n "Fetching Steam game list... "
+    if ! curl -s "$STEAMCMD_APP_LIST" | jq -r '.applist.apps[] | "\(.appid) \(.name)"' > /tmp/steam_games.txt; then
+        echo "Failed to fetch game list from Steam API"
         exit 1
     fi
-    echo "Done! ($(wc -l < /tmp/steam_game_ids.txt) IDs found)"
+    echo "Done! ($(wc -l < /tmp/steam_games.txt) games found)"
+    
+    # Create a lookup file with just IDs for compatibility
+    cut -d' ' -f1 /tmp/steam_games.txt > /tmp/steam_game_ids.txt
 }
 
-# Function to scan compatdata folder and find game IDs
+# Function to scan compatdata folder and find games
 scan_compatdata() {
     echo -n "Scanning compatdata folder... "
     if [ ! -d "$STEAM_COMPATDATA" ]; then
@@ -39,19 +42,22 @@ scan_compatdata() {
     fi
 
     game_ids=($(ls "$STEAM_COMPATDATA"))
-    valid_game_ids=()
+    valid_games=()
     
     echo "Done!"
-    echo "Found the following valid game IDs in compatdata:"
+    echo "Found the following games in compatdata:"
+    
     for id in "${game_ids[@]}"; do
-        if grep -q "^$id$" /tmp/steam_game_ids.txt; then
-            valid_game_ids+=("$id")
-            echo "  - $id"
+        game_info=$(grep "^$id " /tmp/steam_games.txt)
+        if [ -n "$game_info" ]; then
+            game_name=$(echo "$game_info" | cut -d' ' -f2-)
+            valid_games+=("$id:$game_name")
+            echo "  - $id: $game_name"
         fi
     done
     
-    if [ ${#valid_game_ids[@]} -eq 0 ]; then
-        echo "No valid game IDs found in compatdata"
+    if [ ${#valid_games[@]} -eq 0 ]; then
+        echo "No valid games found in compatdata"
         exit 1
     fi
 }
@@ -69,19 +75,30 @@ get_vortex_dir() {
 # Function to ask user which games to symlink
 select_games() {
     echo "Please select the games you want to symlink into the Vortex drive (space separated numbers):"
-    select game_name in "${game_ids[@]}" "Done"; do
-        if [ "$game_name" == "Done" ]; then
-            break
-        elif [ -n "$game_name" ]; then
-            selected_games+=("$game_name")
-            echo "Added $game_name to selection"
+    
+    # Create array of formatted game names for selection
+    local i=1
+    for game in "${valid_games[@]}"; do
+        id=$(echo "$game" | cut -d: -f1)
+        name=$(echo "$game" | cut -d: -f2-)
+        printf "%d) %s (ID: %s)\n" "$i" "$name" "$id"
+        i=$((i+1))
+    done
+    
+    read -p "Enter selection (space separated numbers): " selections
+    
+    for sel in $selections; do
+        if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -le "${#valid_games[@]}" ]; then
+            selected_id=$(echo "${valid_games[$((sel-1))]}" | cut -d: -f1)
+            selected_games+=("$selected_id")
+            echo "Added ${valid_games[$((sel-1))]} to selection"
         else
-            echo "Invalid selection. Please try again."
+            echo "Invalid selection: $sel"
         fi
     done
     
     if [ ${#selected_games[@]} -eq 0 ]; then
-        echo "No games selected. Exiting."
+        echo "No valid games selected. Exiting."
         exit 0
     fi
 }
