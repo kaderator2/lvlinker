@@ -670,18 +670,23 @@ launch_vortex() {
     export WINEDEBUG="-all"
     export WINEDLLOVERRIDES="winemenubuilder.exe=d"
     
-    # Create a clean environment
+    # Create a clean environment and run in foreground
     env -i \
         WINEPREFIX="$WINE_PREFIX" \
         WINEARCH="win64" \
         WINEDEBUG="-all" \
         WINEDLLOVERRIDES="winemenubuilder.exe=d" \
-        wine "$vortex_exe" &
+        wine "$vortex_exe"
     
-    echo "Vortex launched successfully!"
+    # Check if Vortex exited successfully
+    if [ $? -eq 0 ]; then
+        echo "Vortex exited successfully"
+    else
+        echo "Vortex exited with an error"
+    fi
     
-    # Add cleanup trap
-    trap cleanup_wine EXIT
+    # Clean up after Vortex exits
+    cleanup_wine
 }
 
 # Function to load previously selected games
