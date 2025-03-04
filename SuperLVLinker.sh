@@ -841,7 +841,8 @@ create_vortex_registry_entries() {
         wine reg add "HKEY_CURRENT_USER\\Software\\Vortex\\gameRegistry\\$game_id" /v "gamePath" /t REG_SZ /d "$windows_path" /f >/dev/null 2>&1
         wine reg add "HKEY_CURRENT_USER\\Software\\Vortex\\gameRegistry\\$game_id" /v "gameName" /t REG_SZ /d "$game_name" /f >/dev/null 2>&1
         wine reg add "HKEY_CURRENT_USER\\Software\\Vortex\\gameRegistry\\$game_id" /v "discovered" /t REG_DWORD /d 1 /f >/dev/null 2>&1
-    }
+    done
+}
 
 # Function to verify symlinks
 verify_symlinks() {
