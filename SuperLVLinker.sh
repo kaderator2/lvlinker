@@ -54,6 +54,13 @@ check_dependencies() {
         exit 1
     fi
 
+    # Check for winbind (needed for NTLM authentication)
+    if ! command -v ntlm_auth &> /dev/null; then
+        echo "Error: winbind is not installed. Required for NTLM authentication."
+        echo "You can install it with: sudo pacman -S winbind (Arch) or sudo apt install winbind (Debian/Ubuntu)"
+        exit 1
+    fi
+
     # Check for winetricks
     if ! command -v winetricks &> /dev/null; then
         echo "Warning: winetricks is not installed. Some features may not work correctly."
