@@ -51,14 +51,14 @@ check_required_libs() {
     required_64bit_libs=(
         "glibc"
         "gcc-libs"
-        "libstdc++5"
+        "libstdc++"
     )
     
     # Required 32-bit libraries for compatibility
     required_32bit_libs=(
         "lib32-glibc"
         "lib32-gcc-libs"
-        "lib32-libstdc++5"
+        "lib32-libstdc++"
     )
     
     # Check 64-bit libraries
