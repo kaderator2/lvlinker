@@ -1,0 +1,4 @@
+/drop
+/add       install_vortex.sh
+/add       lvlinker.sh
+/read-only manualguide.md
