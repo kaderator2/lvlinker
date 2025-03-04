@@ -124,9 +124,9 @@ check_dependencies() {
         exit 1
     fi
     
-    # Check if Wine version is >= 7.0
-    if ! printf '%s\n7.0\n' "$wine_version" | sort -V -C; then
-        echo "Error: Wine version $wine_version is too old. Please upgrade to Wine 7.0 or newer."
+    # Check if Wine version is >= 7.0 or is a development version (like 10.2)
+    if ! printf '%s\n7.0\n' "$wine_version" | sort -V -C && [[ ! "$wine_version" =~ ^[0-9]+\.[0-9]+$ ]]; then
+        echo "Error: Wine version $wine_version is too old or unrecognized. Please upgrade to Wine 7.0 or newer."
         exit 1
     fi
     
