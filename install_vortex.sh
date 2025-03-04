@@ -3,9 +3,9 @@
 # Configuration
 VORTEX_INSTALLER_URL="https://github.com/Nexus-Mods/Vortex/releases/download/v1.13.7/vortex-setup-1.13.7.exe"
 WINE_PREFIX="$HOME/.vortex_wine"
-STEAM_COMPATDATA="$HOME/.local/share/Steam/steamapps/compatdata"
-VORTEX_COMPATDATA_ID="1000000"  # Default ID for Vortex in compatdata
+STEAM_DIR="$HOME/.local/share/Steam"
 LOG_FILE="/tmp/vortex_install.log"
+VORTEX_DESKTOP_FILE="$HOME/.local/share/applications/vortex.desktop"
 
 # Initialize logging
 exec > >(tee -a "$LOG_FILE") 2>&1
@@ -17,12 +17,11 @@ usage() {
     echo "  -h, --help                 Show this help message and exit"
     echo "  -i, --installer PATH       Path to Vortex installer (will download latest if not provided)"
     echo "  -p, --prefix PATH          Custom Wine prefix path (default: $WINE_PREFIX)"
-    echo "  -c, --compatdata PATH      Custom Steam compatdata path (default: $STEAM_COMPATDATA)"
-    echo "  -id, --compatdata-id ID    Custom ID for Vortex in compatdata (default: $VORTEX_COMPATDATA_ID)"
+    echo "  -s, --steam PATH           Custom Steam installation path (default: $STEAM_DIR)"
     echo "  -v, --verbose              Show detailed output"
     echo
     echo "Example:"
-    echo "  $0 -i ~/Downloads/vortex-setup.exe -id 2000000"
+    echo "  $0 -i ~/Downloads/vortex-setup.exe -p ~/.wine_vortex"
     exit 1
 }
 
@@ -32,9 +31,21 @@ check_dependencies() {
 
     # Check for Steam
     if [ ! -d "$STEAM_DIR" ]; then
-        echo "Error: Steam installation not found at $STEAM_DIR"
-        echo "Please specify the correct Steam path with -s option"
+        echo "Warning: Steam installation not found at $STEAM_DIR"
+        echo "This is not critical but may affect game detection"
+    fi
+
+    # Check for Wine
+    if ! command -v wine &> /dev/null; then
+        echo "Error: Wine is not installed. Please install Wine first."
+        echo "You can install it with: sudo pacman -S wine (Arch) or sudo apt install wine (Debian/Ubuntu)"
         exit 1
+    fi
+
+    # Check for winetricks
+    if ! command -v winetricks &> /dev/null; then
+        echo "Warning: winetricks is not installed. Some features may not work correctly."
+        echo "You can install it with: sudo pacman -S winetricks (Arch) or sudo apt install winetricks (Debian/Ubuntu)"
     fi
 
     # Check for curl
@@ -44,7 +55,7 @@ check_dependencies() {
         exit 1
     fi
 
-    echo "All dependencies are installed."
+    echo "All critical dependencies are installed."
 }
 
 # Function to download Vortex installer
@@ -65,188 +76,105 @@ download_vortex() {
     fi
 }
 
-# Function to find the latest Proton version
-find_proton_version() {
-    echo "Finding Proton version..."
-
-    if [ -n "$PROTON_VERSION" ]; then
-        echo "Using specified Proton version: $PROTON_VERSION"
-        return
-    fi
-
-    # Look for Proton installations
-    proton_dir="$STEAM_DIR/steamapps/common"
-
-    # First try to find Proton Experimental
-    if [ -d "$proton_dir/Proton Experimental" ]; then
-        PROTON_VERSION="Proton Experimental"
-        echo "Found $PROTON_VERSION"
-        return
-    fi
-
-    # Otherwise find the latest numbered version
-    latest_version=""
-    latest_version_num=0
-
-    for dir in "$proton_dir"/Proton*; do
-        if [ -d "$dir" ]; then
-            version=$(basename "$dir")
-            # Extract version number
-            if [[ "$version" =~ Proton\ ([0-9]+)\.([0-9]+) ]]; then
-                major="${BASH_REMATCH[1]}"
-                minor="${BASH_REMATCH[2]}"
-                version_num=$((major * 100 + minor))
-
-                if [ "$version_num" -gt "$latest_version_num" ]; then
-                    latest_version_num=$version_num
-                    latest_version=$version
-                fi
-            fi
-        fi
-    done
-
-    if [ -n "$latest_version" ]; then
-        PROTON_VERSION="$latest_version"
-        echo "Found $PROTON_VERSION"
-    else
-        echo "Error: No Proton installation found in $proton_dir"
-        echo "Please install Proton through Steam or specify a version with -p option"
-        exit 1
-    fi
-}
-
-# Function to setup Proton prefix
-setup_proton_prefix() {
-    echo "Setting up Proton prefix for Vortex..."
-
-    # Create Vortex compatdata directory
-    vortex_compatdata="$STEAM_COMPATDATA/$VORTEX_COMPATDATA_ID"
+# Function to setup Wine prefix
+setup_wine_prefix() {
+    echo "Setting up Wine prefix for Vortex at $WINE_PREFIX..."
 
     # Check if directory already exists
-    if [ -d "$vortex_compatdata" ]; then
-        echo "Warning: Compatdata directory $VORTEX_COMPATDATA_ID already exists"
+    if [ -d "$WINE_PREFIX" ]; then
+        echo "Warning: Wine prefix directory already exists at $WINE_PREFIX"
         read -p "Do you want to overwrite it? (y/n): " confirm
         if [ "$confirm" != "y" ]; then
-            echo "Aborted. Please specify a different ID with -id option"
+            echo "Aborted. Please specify a different prefix path with -p option"
             exit 1
         fi
 
         # Backup existing directory
-        backup_dir="$vortex_compatdata.bak.$(date +%Y%m%d%H%M%S)"
+        backup_dir="${WINE_PREFIX}.bak.$(date +%Y%m%d%H%M%S)"
         echo "Creating backup of existing directory to $backup_dir"
-        mv "$vortex_compatdata" "$backup_dir"
+        mv "$WINE_PREFIX" "$backup_dir"
     fi
 
-    # Create directory structure
-    mkdir -p "$vortex_compatdata/pfx/drive_c/Program Files (x86)/Steam/steamapps/common"
-    mkdir -p "$vortex_compatdata/pfx/drive_c/users/steamuser/AppData/Roaming"
-    mkdir -p "$vortex_compatdata/pfx/drive_c/users/steamuser/Documents"
-
-          # Create a basic Proton configuration
-    cat > "$vortex_compatdata/config.vdf" <<EOF
-"InstallConfigStore"
-{
-    "Software"
-    {
-        "Valve"
-        {
-            "Steam"
-            {
-                "CompatToolMapping"
-                {
-                    "$VORTEX_COMPATDATA_ID"
-                    {
-                        "name"        "$PROTON_VERSION"
-                        "config"      ""
-                        "priority"    "250"
-                    }
-                }
-            }
-        }
-    }
-}
-EOF
-    echo "Proton prefix setup completed."
+    # Create Wine prefix
+    echo "Creating new Wine prefix..."
+    export WINEPREFIX="$WINE_PREFIX"
+    export WINEARCH="win64"
+    
+    # Initialize the prefix
+    wine wineboot --init
+    
+    # Install required dependencies with winetricks if available
+    if command -v winetricks &> /dev/null; then
+        echo "Installing required dependencies with winetricks..."
+        winetricks -q dotnet48 vcrun2019 win10
+    else
+        echo "Winetricks not found, skipping dependency installation"
+        echo "You may need to manually install .NET Framework and Visual C++ Redistributable"
+    fi
+    
+    # Create directory structure for Steam games
+    mkdir -p "$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common"
+    mkdir -p "$WINE_PREFIX/drive_c/users/$USER/AppData/Roaming"
+    mkdir -p "$WINE_PREFIX/drive_c/users/$USER/Documents"
+    
+    echo "Wine prefix setup completed."
 }
 
-# Function to install Vortex using Proton
+# Function to install Vortex using Wine
 install_vortex() {
-    echo "Installing Vortex using Proton..."
+    echo "Installing Vortex using Wine..."
 
-    # Find Proton executable
-    proton_dir="$STEAM_DIR/steamapps/common/$PROTON_VERSION"
-    proton_exe="$proton_dir/proton"
+    # Set Wine prefix
+    export WINEPREFIX="$WINE_PREFIX"
+    export WINEARCH="win64"
 
-    if [ ! -f "$proton_exe" ]; then
-        echo "Error: Proton executable not found at $proton_exe"
-        exit 1
-    fi
-
-    # Set up environment variables for Proton
-    export STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_DIR"
-    export STEAM_COMPAT_DATA_PATH="$STEAM_COMPATDATA/$VORTEX_COMPATDATA_ID"
-
-    # Run Vortex installer with Proton
-    echo "Running installer with Proton (this may take a while)..."
-    "$proton_exe" run "$installer_path"
+    # Run Vortex installer with Wine
+    echo "Running installer with Wine (this may take a while)..."
+    wine "$installer_path"
 
     if [ $? -ne 0 ]; then
-        echo "Error: Failed to run Vortex installer with Proton"
+        echo "Error: Failed to run Vortex installer with Wine"
         exit 1
     fi
 
     echo "Vortex installation completed."
 }
 
-# Function to configure Vortex in Steam
-configure_steam() {
-    echo "Configuring Vortex in Steam..."
-
-    # Find Vortex executable
-    vortex_exe=$(find "$STEAM_COMPATDATA/$VORTEX_COMPATDATA_ID/pfx" -name "Vortex.exe" -print -quit)
-
-    if [ -z "$vortex_exe" ]; then
-        echo "Warning: Could not find Vortex.exe in Proton prefix"
-        echo "Installation may have failed or used a non-standard location"
-        return 1
-    fi
-
-    echo "Vortex executable found at: $vortex_exe"
-    echo "Vortex compatdata ID: $VORTEX_COMPATDATA_ID"
-    echo "Vortex compatdata path: $STEAM_COMPATDATA/$VORTEX_COMPATDATA_ID"
-
-    return 0
-}
-
-# Function to create Steam shortcut
-create_steam_shortcut() {
-    echo "Creating Steam shortcut for Vortex..."
+# Function to create desktop shortcut
+create_desktop_shortcut() {
+    echo "Creating desktop shortcut for Vortex..."
     
     # Find Vortex executable in Wine prefix
-    vortex_exe=$(find "$STEAM_COMPATDATA/$VORTEX_COMPATDATA_ID/pfx" -name "Vortex.exe" -print -quit)
+    vortex_exe=$(find "$WINE_PREFIX" -name "Vortex.exe" -print -quit)
     
     if [ -z "$vortex_exe" ]; then
         echo "Warning: Could not find Vortex.exe in Wine prefix"
-        echo "You may need to create the Steam shortcut manually"
-        return
+        echo "Installation may have failed or used a non-standard location"
+        return 1
     fi
     
-    # Create VDF file for Steam shortcut
-    shortcut_vdf="$HOME/.steam/steam/userdata/*/config/shortcuts.vdf"
+    # Create desktop file
+    cat > "$VORTEX_DESKTOP_FILE" <<EOF
+[Desktop Entry]
+Name=Vortex
+Comment=Vortex Mod Manager
+Exec=env WINEPREFIX="$WINE_PREFIX" wine "$vortex_exe"
+Type=Application
+StartupNotify=true
+Icon=vortex
+Categories=Game;
+EOF
     
-    echo "Vortex executable found at: $vortex_exe"
-    echo "To add Vortex to Steam:"
-    echo "1. Open Steam"
-    echo "2. Click on 'Add a Game' in the bottom left corner"
-    echo "3. Select 'Add a Non-Steam Game'"
-    echo "4. Click 'Browse' and navigate to: $vortex_exe"
-    echo "5. Click 'Add Selected Programs'"
-    echo "6. Right-click on Vortex in your Steam library"
-    echo "7. Select Properties"
-    echo "8. In the 'Compatibility' tab, check 'Force the use of a specific Steam Play compatibility tool'"
-    echo "9. Select a Proton version (Proton Experimental recommended)"
+    # Try to find and set an icon
+    icon_path=$(find "$WINE_PREFIX" -name "vortex.ico" -o -name "vortex.png" -print -quit)
+    if [ -n "$icon_path" ]; then
+        sed -i "s|Icon=vortex|Icon=$icon_path|" "$VORTEX_DESKTOP_FILE"
+    fi
     
-    echo "Steam shortcut instructions provided."
+    chmod +x "$VORTEX_DESKTOP_FILE"
+    
+    echo "Desktop shortcut created at: $VORTEX_DESKTOP_FILE"
+    return 0
 }
 
 # Function to setup lvlinker
@@ -272,7 +200,6 @@ setup_lvlinker() {
 # Main script execution
 verbose=false
 installer_path=""
-STEAM_DIR="$HOME/.local/share/Steam"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -284,21 +211,12 @@ while [[ $# -gt 0 ]]; do
             installer_path="$2"
             shift 2
             ;;
+        -p|--prefix)
+            WINE_PREFIX="$2"
+            shift 2
+            ;;
         -s|--steam)
             STEAM_DIR="$2"
-            STEAM_COMPATDATA="$STEAM_DIR/steamapps/compatdata"
-            shift 2
-            ;;
-        -c|--compatdata)
-            STEAM_COMPATDATA="$2"
-            shift 2
-            ;;
-        -id|--compatdata-id)
-            VORTEX_COMPATDATA_ID="$2"
-            shift 2
-            ;;
-        -p|--proton)
-            PROTON_VERSION="$2"
             shift 2
             ;;
         -v|--verbose)
@@ -312,19 +230,18 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "Starting Vortex Installer (Proton Edition)..."
+echo "Starting Vortex Installer (Wine Edition)..."
 echo "Log file: $LOG_FILE"
 
 check_dependencies
 download_vortex
-find_proton_version
-setup_proton_prefix
+setup_wine_prefix
 install_vortex
-configure_steam
-create_steam_shortcut
+create_desktop_shortcut
 setup_lvlinker
 
 echo "Vortex installation completed successfully!"
-echo "You can now add Vortex to Steam and run it through Proton."
+echo "You can now run Vortex using the desktop shortcut or with:"
+echo "env WINEPREFIX=\"$WINE_PREFIX\" wine \"$(find "$WINE_PREFIX" -name "Vortex.exe" -print -quit)\""
 echo "After that, use lvlinker.sh to link your games to Vortex."
 echo "You can review the complete log at $LOG_FILE"
