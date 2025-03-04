@@ -33,9 +33,10 @@ get_game_name() {
     
     # Query Steam API
     local url="https://store.steampowered.com/api/appdetails?appids=$appid"
-    local name=$(curl -s "$url" | jq -r ".\"$appid\".data.name")
+    local response=$(curl -s "$url")
+    local name=$(echo "$response" | jq -r ".\"$appid\".data.name // empty")
     
-    if [ "$name" != "null" ] && [ -n "$name" ]; then
+    if [ -n "$name" ]; then
         echo "$name" > "$cache_file"
         echo "$name"
         return 0
@@ -74,14 +75,24 @@ scan_compatdata() {
     fi
 }
 
-# Function to ask user for Vortex install directory
+# Function to ask user for Vortex compatdata ID
 get_vortex_dir() {
-    read -p "Enter the directory where Vortex is installed: " vortex_dir
-    if [ ! -d "$vortex_dir" ]; then
-        echo "Directory $vortex_dir does not exist."
+    echo "Please select the Vortex installation from the following compatdata folders:"
+    local i=1
+    for id in "${game_ids[@]}"; do
+        printf "%d) %s\n" "$i" "$id"
+        i=$((i+1))
+    done
+    
+    read -p "Enter the number of the Vortex installation: " vortex_sel
+    if [[ "$vortex_sel" =~ ^[0-9]+$ ]] && [ "$vortex_sel" -le "${#game_ids[@]}" ]; then
+        vortex_id="${game_ids[$((vortex_sel-1))]}"
+        vortex_dir="$STEAM_COMPATDATA/$vortex_id"
+        echo "Vortex directory set to $vortex_dir"
+    else
+        echo "Invalid selection"
         exit 1
     fi
-    echo "Vortex directory set to $vortex_dir"
 }
 
 # Function to ask user which games to symlink
