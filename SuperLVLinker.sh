@@ -609,20 +609,39 @@ symlink_directories() {
             # Convert Linux path to Windows-style path for better compatibility
             windows_game_dir=$(winepath -w "$game_dir")
             
-            # Create the symlink using mklink through Wine
-            wine cmd /c "mklink /D \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$(basename "$game_dir")\" \"$windows_game_dir\"" >/dev/null 2>&1
-            
-            # Verify the symlink was created
-            if [ ! -L "$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common/$(basename "$game_dir")" ]; then
-                echo "Failed to create proper symlink for $game_name"
-                echo "Attempting alternative method..."
+            # First try creating a native Linux symlink
+            echo -n "Attempting native symlink... "
+            ln -sf "$game_dir" "$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common/$(basename "$game_dir")"
+            if [ $? -eq 0 ]; then
+                echo "Success!"
+            else
+                echo "Failed. Trying Wine mklink..."
                 
-                # Try creating junction point instead
-                wine cmd /c "mklink /J \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$(basename "$game_dir")\" \"$windows_game_dir\"" >/dev/null 2>&1
+                # Try creating Windows symlink using mklink
+                wine cmd /c "mklink /D \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$(basename "$game_dir")\" \"$windows_game_dir\"" >/dev/null 2>&1
                 
                 if [ $? -ne 0 ]; then
-                    echo "Failed to create junction point for $game_name"
-                    exit 1
+                    echo "Failed to create symlink with mklink. Trying junction point..."
+                    
+                    # Try creating junction point
+                    wine cmd /c "mklink /J \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$(basename "$game_dir")\" \"$windows_game_dir\"" >/dev/null 2>&1
+                    
+                    if [ $? -ne 0 ]; then
+                        echo "Failed to create junction point. Trying manual copy..."
+                        
+                        # As last resort, copy the directory
+                        cp -r "$game_dir" "$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common/$(basename "$game_dir")"
+                        if [ $? -eq 0 ]; then
+                            echo "Copied game files instead of symlinking"
+                        else
+                            echo "Failed to copy game files. Please check permissions."
+                            exit 1
+                        fi
+                    else
+                        echo "Created junction point successfully"
+                    fi
+                else
+                    echo "Created symlink with mklink successfully"
                 fi
             fi
             echo "Done!"
