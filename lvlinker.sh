@@ -20,17 +20,28 @@ usage() {
     exit 1
 }
 
-# Function to fetch Steam game list
-fetch_steam_games() {
-    echo -n "Fetching Steam game list... "
-    if ! curl -s "$STEAMCMD_APP_LIST" | jq -r '.applist.apps[] | "\(.appid) \(.name)"' > /tmp/steam_games.txt; then
-        echo "Failed to fetch game list from Steam API"
-        exit 1
-    fi
-    echo "Done! ($(wc -l < /tmp/steam_games.txt) games found)"
+# Function to get game name from Steam API
+get_game_name() {
+    local appid=$1
+    local cache_file="/tmp/steam_game_$appid.cache"
     
-    # Create a lookup file with just IDs for compatibility
-    cut -d' ' -f1 /tmp/steam_games.txt > /tmp/steam_game_ids.txt
+    # Check cache first
+    if [ -f "$cache_file" ]; then
+        cat "$cache_file"
+        return 0
+    fi
+    
+    # Query Steam API
+    local url="https://store.steampowered.com/api/appdetails?appids=$appid"
+    local name=$(curl -s "$url" | jq -r ".\"$appid\".data.name")
+    
+    if [ "$name" != "null" ] && [ -n "$name" ]; then
+        echo "$name" > "$cache_file"
+        echo "$name"
+        return 0
+    fi
+    
+    return 1
 }
 
 # Function to scan compatdata folder and find games
@@ -48,16 +59,17 @@ scan_compatdata() {
     echo "Found the following games in compatdata:"
     
     for id in "${game_ids[@]}"; do
-        game_info=$(grep "^$id " /tmp/steam_games.txt)
-        if [ -n "$game_info" ]; then
-            game_name=$(echo "$game_info" | cut -d' ' -f2-)
+        game_name=$(get_game_name "$id")
+        if [ $? -eq 0 ]; then
             valid_games+=("$id:$game_name")
             echo "  - $id: $game_name"
+        else
+            echo "  - $id: (Non-Steam game or unknown)"
         fi
     done
     
     if [ ${#valid_games[@]} -eq 0 ]; then
-        echo "No valid games found in compatdata"
+        echo "No Steam games found in compatdata"
         exit 1
     fi
 }
@@ -191,7 +203,6 @@ done
 echo "Starting Vortex Linker..."
 echo "Log file: $LOG_FILE"
 
-fetch_steam_game_ids
 scan_compatdata
 get_vortex_dir
 select_games
