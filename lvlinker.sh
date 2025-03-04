@@ -333,7 +333,7 @@ symlink_directories() {
         if [ "$dry_run" = true ]; then
             echo "DRY RUN: ln -sf \"$game_compatdata_dir/pfx/drive_c/users/steamuser/Documents\" \"$vortex_compatdata_dir/pfx/drive_c/users/steamuser/Documents\""
         else
-            ln -sf "$game_compatdata_dir/pfx/drive_c/users/steamuser/Documents" "$vortex_compatdata_dir/pfx/drive_c/users/steamuser/Documents" || {
+            ln -sf "$vortex_compatdata_dir/pfx/drive_c/users/steamuser/Documents" "$game_compatdata_dir/pfx/drive_c/users/steamuser/Documents" || {
                 echo "Failed to symlink Documents for $game_id"
                 exit 1
             }
