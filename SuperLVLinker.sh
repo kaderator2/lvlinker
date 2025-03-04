@@ -43,35 +43,70 @@ usage() {
     exit 1
 }
 
-# Function to check for 32-bit libraries
-check_32bit_libs() {
-    echo "Checking for required 32-bit libraries..."
+# Function to check for required libraries
+check_required_libs() {
+    echo "Checking for required libraries..."
     
-    # Check for common required 32-bit libraries
-    missing_libs=()
-    for lib in libc6:i386 libstdc++6:i386 libgcc-s1:i386; do
+    # Required libraries for 64-bit Wine
+    required_64bit_libs=(
+        "libc6"
+        "libstdc++6"
+        "libgcc-s1"
+    )
+    
+    # Required 32-bit libraries for compatibility
+    required_32bit_libs=(
+        "libc6:i386"
+        "libstdc++6:i386"
+        "libgcc-s1:i386"
+    )
+    
+    # Check 64-bit libraries
+    missing_64bit=()
+    for lib in "${required_64bit_libs[@]}"; do
         if ! dpkg -l "$lib" >/dev/null 2>&1; then
-            missing_libs+=("$lib")
+            missing_64bit+=("$lib")
         fi
     done
     
-    if [ ${#missing_libs[@]} -gt 0 ]; then
-        echo "Missing required 32-bit libraries:"
-        for lib in "${missing_libs[@]}"; do
+    # Check 32-bit libraries
+    missing_32bit=()
+    for lib in "${required_32bit_libs[@]}"; do
+        if ! dpkg -l "$lib" >/dev/null 2>&1; then
+            missing_32bit+=("$lib")
+        fi
+    done
+    
+    # Report missing libraries
+    if [ ${#missing_64bit[@]} -gt 0 ]; then
+        echo "Missing required 64-bit libraries:"
+        for lib in "${missing_64bit[@]}"; do
             echo "  - $lib"
         done
+    fi
+    
+    if [ ${#missing_32bit[@]} -gt 0 ]; then
+        echo "Missing required 32-bit compatibility libraries:"
+        for lib in "${missing_32bit[@]}"; do
+            echo "  - $lib"
+        done
+        echo "Note: Even in 64-bit mode, Wine requires 32-bit libraries for compatibility"
+    fi
+    
+    if [ ${#missing_64bit[@]} -gt 0 ] || [ ${#missing_32bit[@]} -gt 0 ]; then
         echo "You can install them with:"
-        echo "  sudo dpkg --add-architecture i386 && sudo apt update && sudo apt install ${missing_libs[*]}"
+        echo "  sudo dpkg --add-architecture i386 && sudo apt update && \\"
+        echo "  sudo apt install ${missing_64bit[*]} ${missing_32bit[*]}"
         exit 1
     fi
     
-    echo "All required 32-bit libraries are installed."
+    echo "All required libraries are installed."
 }
 
 # Function to check dependencies
 check_dependencies() {
     echo "Checking dependencies..."
-    check_32bit_libs
+    check_required_libs
 
     # Check for Wine and validate version
     if ! command -v wine &> /dev/null; then
