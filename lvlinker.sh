@@ -396,10 +396,11 @@ symlink_directories() {
                     echo "  Found game directory at: $game_dir"
                 fi
                 if [ "$dry_run" = true ]; then
-                    echo "DRY RUN: ln -sf \"$game_dir\" \"$vortex_dir/common/$(basename "$game_dir")\""
+                    echo "DRY RUN: ln -sf \"$game_dir\" \"$vortex_dir/pfx/drive_c/Program Files (x86)/Steam/steamapps/common/$(basename "$game_dir")\""
                 else
-                    mkdir -p "$vortex_dir/common"
-                    ln -sf "$game_dir" "$vortex_dir/common/$(basename "$game_dir")" || {
+                    # Create Windows-style Steam directory structure in Vortex prefix
+                    mkdir -p "$vortex_dir/pfx/drive_c/Program Files (x86)/Steam/steamapps/common"
+                    ln -sf "$game_dir" "$vortex_dir/pfx/drive_c/Program Files (x86)/Steam/steamapps/common/$(basename "$game_dir")" || {
                         echo "Failed to symlink game files for $game_id"
                         exit 1
                     }
