@@ -270,11 +270,21 @@ symlink_directories() {
         echo -n "  Symlinking game files... "
         # Find the steamapps directory (two levels up from compatdata)
         steamapps_dir=$(dirname "$(dirname "$game_compatdata_dir")")
-        common_dir="$steamapps_dir/common"
+        common_dir="$steamapps_dir/common/"
         
         if [ -d "$common_dir" ]; then
             # Find the game directory (using the game name from valid_games)
             game_name=$(echo "${valid_games[@]}" | grep -oP "$game_id:\K[^:]+")
+            
+            # Debug output for paths
+            if [ "$verbose" = true ]; then
+                echo -e "\nDEBUG:"
+                echo "  Game ID: $game_id"
+                echo "  Game Name: $game_name"
+                echo "  Common Dir: $common_dir"
+                echo "  Looking for game directory in:"
+                ls -l "$common_dir"
+            fi
             
             # Try exact match first
             if [ -n "$game_name" ] && [ -d "$common_dir/$game_name" ]; then
@@ -304,9 +314,18 @@ symlink_directories() {
                 fi
             else
                 echo "Skipped (game directory not found in $common_dir)"
+                if [ "$verbose" = true ]; then
+                    echo "  Tried patterns:"
+                    echo "    - Exact: $game_name"
+                    echo "    - Case-insensitive: $game_name"
+                    echo "    - Alternative: $alt_name"
+                fi
             fi
         else
             echo "Skipped (common directory not found at $common_dir)"
+            if [ "$verbose" = true ]; then
+                echo "  Expected path: $common_dir"
+            fi
         fi
     done
     
