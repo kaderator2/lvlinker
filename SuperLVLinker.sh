@@ -664,18 +664,37 @@ launch_vortex() {
         exit 1
     fi
     
+    # Ensure XDG_RUNTIME_DIR is set
+    if [ -z "$XDG_RUNTIME_DIR" ]; then
+        export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+        if [ ! -d "$XDG_RUNTIME_DIR" ]; then
+            export XDG_RUNTIME_DIR="/tmp/runtime-$(id -u)"
+            mkdir -p "$XDG_RUNTIME_DIR"
+            chmod 0700 "$XDG_RUNTIME_DIR"
+        fi
+    fi
+    
     # Launch Vortex with proper environment
     export WINEPREFIX="$WINE_PREFIX"
     export WINEARCH="win64"
     export WINEDEBUG="-all"
     export WINEDLLOVERRIDES="winemenubuilder.exe=d"
+    export DISPLAY=":0"
+    export PULSE_SERVER="unix:$XDG_RUNTIME_DIR/pulse/native"
     
-    # Create a clean environment and run in foreground
+    # Create a clean environment with necessary variables
     env -i \
+        HOME="$HOME" \
+        USER="$USER" \
+        LOGNAME="$LOGNAME" \
+        PATH="/usr/bin:/bin:/usr/local/bin" \
         WINEPREFIX="$WINE_PREFIX" \
         WINEARCH="win64" \
         WINEDEBUG="-all" \
         WINEDLLOVERRIDES="winemenubuilder.exe=d" \
+        DISPLAY="$DISPLAY" \
+        XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+        PULSE_SERVER="$PULSE_SERVER" \
         wine "$vortex_exe"
     
     # Check if Vortex exited successfully
