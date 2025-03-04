@@ -7,12 +7,14 @@ DEFAULT_COMPATDATA=(
 )
 BACKUP_DIR="$HOME/vortex_backups"
 LOG_FILE="/tmp/lvlinker.log"
+VERSION="1.0.0"
 
 # Initialize logging
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 # Function to display usage
 usage() {
+    echo "Linux Vortex Linker v$VERSION"
     echo "Usage: $0 [options]"
     echo "Options:"
     echo "  -h, --help         Show this help message and exit"
@@ -20,9 +22,13 @@ usage() {
     echo "  -b, --backup       Create backup before making changes"
     echo "  -v, --verbose      Show detailed output"
     echo "  -p, --path PATH    Add custom Steam compatdata path"
+    echo "  -i, --install      Run the Vortex installer script (if available)"
     echo
     echo "Example:"
     echo "  $0 -p /mnt/SlowGames/SteamLibrary/steamapps/compatdata"
+    echo
+    echo "Note: If you haven't installed Vortex yet, run './install_vortex.sh' first"
+    echo "      or use the -i option to run the installer automatically."
     exit 1
 }
 
@@ -429,10 +435,31 @@ symlink_directories() {
     echo "Symlinking completed for all selected games."
 }
 
+# Function to run Vortex installer
+run_installer() {
+    if [ -f "./install_vortex.sh" ]; then
+        echo "Running Vortex installer script..."
+        chmod +x ./install_vortex.sh
+        ./install_vortex.sh
+        
+        if [ $? -ne 0 ]; then
+            echo "Vortex installation failed. Please check the logs."
+            exit 1
+        fi
+        
+        echo "Vortex installation completed. Continuing with linking..."
+    else
+        echo "Error: install_vortex.sh not found in the current directory."
+        echo "Please download and run the installer script first."
+        exit 1
+    fi
+}
+
 # Main script execution
 dry_run=false
 do_backup=false
 verbose=false
+run_install=false
 custom_paths=()
 
 # Parse arguments
@@ -453,6 +480,10 @@ while [[ $# -gt 0 ]]; do
             verbose=true
             shift
             ;;
+        -i|--install)
+            run_install=true
+            shift
+            ;;
         -p|--path)
             if [ -d "$2" ]; then
                 custom_paths+=("$2")
@@ -469,6 +500,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Run installer if requested
+if [ "$run_install" = true ]; then
+    run_installer
+fi
+
 # Add custom paths to compatdata search
 if [ ${#custom_paths[@]} -gt 0 ]; then
     for path in "${custom_paths[@]}"; do
@@ -476,7 +512,7 @@ if [ ${#custom_paths[@]} -gt 0 ]; then
     done
 fi
 
-echo "Starting Vortex Linker..."
+echo "Starting Linux Vortex Linker v$VERSION..."
 echo "Log file: $LOG_FILE"
 
 scan_compatdata
@@ -491,3 +527,12 @@ symlink_directories
 
 echo "All done! Vortex should now recognize the selected games as being on the same drive."
 echo "You can review the complete log at $LOG_FILE"
+
+# Final instructions
+echo
+echo "Next steps:"
+echo "1. Launch Vortex through Steam"
+echo "2. In Vortex, go to Settings > Games"
+echo "3. Add your games and set their paths to:"
+echo "   C:\\Program Files (x86)\\Steam\\steamapps\\common\\<GameName>"
+echo "4. Enjoy modding on Linux!"
