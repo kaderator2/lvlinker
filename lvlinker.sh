@@ -170,21 +170,59 @@ get_vortex_dir() {
         return
     fi
     
-    # If auto-detect fails, ask user to select
-    echo "Please select the Vortex installation from the following non-Steam folders:"
-    local i=1
-    for id in "${non_steam_folders[@]}"; do
-        printf "%d) %s\n" "$i" "$id"
-        i=$((i+1))
-    done
+    echo "Please select your Vortex installation method:"
+    echo "1) Choose from detected non-Steam folders"
+    echo "2) Enter a custom compatdata ID"
+    echo
+    echo "Note: If you used the install_vortex.sh script, the ID should be 1000000"
     
-    read -p "Enter the number of the Vortex installation: " vortex_sel
-    if [[ "$vortex_sel" =~ ^[0-9]+$ ]] && [ "$vortex_sel" -le "${#non_steam_folders[@]}" ]; then
-        vortex_id="${non_steam_folders[$((vortex_sel-1))]}"
-        vortex_dir="$STEAM_COMPATDATA/$vortex_id"
-        echo "Vortex directory set to $vortex_dir"
+    read -p "Enter your choice (1 or 2): " choice
+    
+    if [ "$choice" == "1" ]; then
+        # List detected non-Steam folders
+        echo "Please select the Vortex installation from the following non-Steam folders:"
+        local i=1
+        for id in "${non_steam_folders[@]}"; do
+            printf "%d) %s\n" "$i" "$id"
+            i=$((i+1))
+        done
+        
+        read -p "Enter the number of the Vortex installation: " vortex_sel
+        if [[ "$vortex_sel" =~ ^[0-9]+$ ]] && [ "$vortex_sel" -le "${#non_steam_folders[@]}" ]; then
+            vortex_id="${non_steam_folders[$((vortex_sel-1))]}"
+            vortex_dir="$STEAM_COMPATDATA/$vortex_id"
+            echo "Vortex directory set to $vortex_dir"
+        else
+            echo "Invalid selection"
+            exit 1
+        fi
+    elif [ "$choice" == "2" ]; then
+        # Allow custom ID input
+        read -p "Enter the full compatdata ID for Vortex: " custom_id
+        if [[ "$custom_id" =~ ^[0-9]+$ ]]; then
+            vortex_id="$custom_id"
+            vortex_dir="$STEAM_COMPATDATA/$vortex_id"
+            
+            # Verify the directory exists
+            if [ ! -d "$vortex_dir" ]; then
+                echo "Warning: Directory $vortex_dir does not exist"
+                read -p "Do you want to create it? (y/n): " create_choice
+                if [ "$create_choice" == "y" ]; then
+                    mkdir -p "$vortex_dir"
+                    echo "Created Vortex directory at $vortex_dir"
+                else
+                    echo "Aborting..."
+                    exit 1
+                fi
+            fi
+            
+            echo "Vortex directory set to $vortex_dir"
+        else
+            echo "Invalid ID. Please enter a numeric ID."
+            exit 1
+        fi
     else
-        echo "Invalid selection"
+        echo "Invalid choice"
         exit 1
     fi
 }
