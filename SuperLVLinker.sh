@@ -609,60 +609,85 @@ symlink_directories() {
             # Convert Linux path to Windows-style path for better compatibility
             windows_game_dir=$(winepath -w "$game_dir")
             
-            # Create the target directory structure
+            # First, ensure target directory doesn't exist or is empty
+            target_dir="$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common/$(basename "$game_dir")"
+            if [ -e "$target_dir" ]; then
+                echo "Target directory exists, removing it first..."
+                rm -rf "$target_dir"
+            fi
+            
+            # Create parent directory structure
             mkdir -p "$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common"
             
-            # Convert Linux path to Windows-style path
-            windows_game_dir=$(winepath -w "$game_dir")
+            # Try native Linux symlink first (most reliable)
+            echo -n "Creating native symlink... "
+            ln -sf "$game_dir" "$target_dir"
             
-            # Create a proper Windows junction point
-            echo -n "Creating junction point... "
-            wine cmd /c "mklink /J \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$(basename "$game_dir")\" \"$windows_game_dir\"" >/dev/null 2>&1
-            
-            if [ $? -eq 0 ]; then
+            if [ $? -eq 0 ] && [ -L "$target_dir" ]; then
                 echo "Success!"
                 
-                # Verify the junction point
-                echo -n "Verifying junction point... "
-                if [ -d "$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common/$(basename "$game_dir")" ]; then
-                    echo "Verified!"
+                # Test if the symlink works
+                if [ -d "$target_dir" ] && [ -r "$target_dir" ]; then
+                    echo "Symlink verified and readable"
                     
-                    # Set proper permissions
-                    chmod -R a+rx "$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common/$(basename "$game_dir")"
+                    # Create a test file to verify Wine can see it
+                    echo "Testing Wine visibility..."
+                    test_file="$target_dir/.vortex_test"
+                    echo "Test file for Vortex" > "$test_file"
                     
-                    # Create a dummy file to test visibility
-                    test_file="$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common/$(basename "$game_dir")/vortex_test.txt"
-                    echo "This is a test file for Vortex" > "$test_file"
-                    
-                    # Verify test file is accessible through Wine
-                    if wine cmd /c "type \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$(basename "$game_dir")\\vortex_test.txt\"" >/dev/null 2>&1; then
-                        echo "Test file successfully accessed through Wine"
-                        rm "$test_file"
+                    if [ -f "$test_file" ]; then
+                        echo "Test file created successfully"
+                        rm -f "$test_file"
                     else
-                        echo "Warning: Could not access test file through Wine"
+                        echo "Warning: Could not create test file"
                     fi
                 else
-                    echo "Failed to verify junction point"
+                    echo "Warning: Symlink created but may not be readable"
                 fi
             else
-                echo "Failed to create junction point. Trying alternative method..."
+                echo "Failed. Trying Windows junction point..."
                 
-                # Fallback to bind mounting
-                echo -n "Attempting bind mount... "
-                mount --bind "$game_dir" "$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common/$(basename "$game_dir")"
+                # Convert Linux path to Windows-style path
+                windows_game_dir=$(winepath -w "$game_dir")
                 
-                if [ $? -eq 0 ]; then
-                    echo "Bind mount successful!"
+                # Try creating a Windows junction point
+                wine cmd /c "mklink /J \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$(basename "$game_dir")\" \"$windows_game_dir\"" >/dev/null 2>&1
+                
+                if [ $? -eq 0 ] && [ -d "$target_dir" ]; then
+                    echo "Junction point created successfully"
                 else
-                    echo "Bind mount failed. Trying manual copy..."
+                    echo "Junction point failed. Trying direct copy..."
                     
-                    # As last resort, copy the directory
-                    cp -r "$game_dir" "$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common/$(basename "$game_dir")"
+                    # Create the directory first
+                    mkdir -p "$target_dir"
+                    
+                    # Copy files one by one to avoid directory conflicts
+                    echo "Copying game files (this may take a while)..."
+                    find "$game_dir" -type f -print0 | while IFS= read -r -d $'\0' file; do
+                        rel_path="${file#$game_dir/}"
+                        target_file="$target_dir/$rel_path"
+                        mkdir -p "$(dirname "$target_file")"
+                        cp "$file" "$target_file"
+                    done
+                    
                     if [ $? -eq 0 ]; then
-                        echo "Copied game files instead of symlinking"
+                        echo "Game files copied successfully"
                     else
-                        echo "Failed to copy game files. Please check permissions."
-                        exit 1
+                        echo "Error: Failed to copy game files"
+                        echo "Trying one last method - rsync..."
+                        
+                        if command -v rsync &> /dev/null; then
+                            rsync -a "$game_dir/" "$target_dir/"
+                            if [ $? -eq 0 ]; then
+                                echo "Game files synced with rsync successfully"
+                            else
+                                echo "Error: All methods failed. Please check permissions and disk space."
+                                exit 1
+                            fi
+                        else
+                            echo "Error: All methods failed and rsync not available."
+                            exit 1
+                        fi
                     fi
                 fi
             fi
@@ -764,34 +789,89 @@ verify_symlinks() {
     
     for game_id in "${selected_games[@]}"; do
         game_name=$(get_game_name "$game_id")
+        
+        # Find game directory
+        game_dir=""
+        for steam_dir in "${valid_steam_dirs[@]}"; do
+            local steamapps_dir="$steam_dir/steamapps"
+            local common_dir="$steamapps_dir/common"
+            local manifest_file="$steamapps_dir/appmanifest_$game_id.acf"
+            
+            if [ -f "$manifest_file" ]; then
+                install_dir=$(grep -oP '"installdir"\s+"\K[^"]+' "$manifest_file")
+                if [ -n "$install_dir" ] && [ -d "$common_dir/$install_dir" ]; then
+                    game_dir="$common_dir/$install_dir"
+                    break
+                fi
+                
+                # Try with game name
+                if [ -d "$common_dir/$game_name" ]; then
+                    game_dir="$common_dir/$game_name"
+                    break
+                fi
+            fi
+        done
+        
+        if [ -z "$game_dir" ]; then
+            echo "Could not find source directory for $game_name, skipping verification"
+            continue
+        fi
+        
         target_dir="$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common/$(basename "$game_dir")"
         
         echo -n "Verifying $game_name... "
         
         if [ -d "$target_dir" ]; then
-            # Check if it's a junction point
-            if mountpoint -q "$target_dir"; then
-                echo "Bind mount OK"
-            elif [ -L "$target_dir" ]; then
-                echo "Symlink OK"
-            else
-                # Check if it's a Windows junction
-                if wine cmd /c "dir \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$(basename "$game_dir")\"" >/dev/null 2>&1; then
-                    echo "Junction point OK"
+            # Check if it's a symlink
+            if [ -L "$target_dir" ]; then
+                echo "Native symlink OK"
+                # Check if the symlink target exists
+                if [ -e "$(readlink -f "$target_dir")" ]; then
+                    echo "  Symlink target exists and is accessible"
                 else
-                    echo "Regular directory (copied)"
+                    echo "  Warning: Symlink target doesn't exist or isn't accessible"
                 fi
+            # Check if it's a junction point or regular directory
+            elif wine cmd /c "dir \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$(basename "$game_dir")\"" >/dev/null 2>&1; then
+                echo "Windows junction point or directory OK"
+                
+                # Count files to verify content
+                wine_file_count=$(wine cmd /c "dir /s /b \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$(basename "$game_dir")\" | find /c /v \"\"" 2>/dev/null)
+                echo "  Files visible to Wine: $wine_file_count"
+                
+                # Create and verify test file
+                test_file="$target_dir/.vortex_test"
+                echo "Test file for verification" > "$test_file"
+                if wine cmd /c "type \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$(basename "$game_dir")\\.vortex_test\"" >/dev/null 2>&1; then
+                    echo "  Test file readable by Wine: Yes"
+                    rm -f "$test_file"
+                else
+                    echo "  Test file readable by Wine: No"
+                fi
+            else
+                echo "Directory exists but may not be accessible by Wine"
             fi
             
-            # Test file access
-            test_file="$target_dir/vortex_test.txt"
-            if [ -f "$test_file" ]; then
-                echo "  Test file found"
+            # Check permissions
+            if [ -r "$target_dir" ]; then
+                echo "  Read permission: Yes"
             else
-                echo "  Test file missing"
+                echo "  Read permission: No"
+            fi
+            
+            if [ -w "$target_dir" ]; then
+                echo "  Write permission: Yes"
+            else
+                echo "  Write permission: No"
+            fi
+            
+            if [ -x "$target_dir" ]; then
+                echo "  Execute permission: Yes"
+            else
+                echo "  Execute permission: No"
             fi
         else
-            echo "Missing directory"
+            echo "Missing or inaccessible"
         fi
     done
     
