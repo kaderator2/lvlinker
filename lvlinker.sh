@@ -270,7 +270,7 @@ symlink_directories() {
         echo -n "  Symlinking game files... "
         # Find the steamapps directory (two levels up from compatdata)
         steamapps_dir=$(dirname "$(dirname "$game_compatdata_dir")")
-        common_dir="$steamapps_dir/common/"
+        common_dir="$steamapps_dir/common"
         
         if [ -d "$common_dir" ]; then
             # Find the game directory (using the game name from valid_games)
@@ -284,24 +284,47 @@ symlink_directories() {
                 echo "  Common Dir: $common_dir"
                 echo "  Looking for game directory in:"
                 ls -l "$common_dir"
+                echo "  Steamapps Dir: $steamapps_dir"
+                echo "  Game Compatdata Dir: $game_compatdata_dir"
             fi
             
-            # Try exact match first
-            if [ -n "$game_name" ] && [ -d "$common_dir/$game_name" ]; then
-                game_dir="$common_dir/$game_name"
-            else
-                # Try case-insensitive match if exact match fails
+            # First try the exact path
+            game_dir="$common_dir/$game_name"
+            if [ -d "$game_dir" ]; then
+                if [ "$verbose" = true ]; then
+                    echo "  Found game directory at exact path: $game_dir"
+                fi
+            
+            # If exact path not found, try case-insensitive search
+            if [ ! -d "$game_dir" ]; then
+                if [ "$verbose" = true ]; then
+                    echo "  Trying case-insensitive search for: $game_name"
+                fi
                 game_dir=$(find "$common_dir" -maxdepth 1 -type d -iname "$game_name" -print -quit)
             fi
             
             # If still not found, try alternative naming patterns
-            if [ -z "$game_dir" ]; then
+            if [ ! -d "$game_dir" ]; then
+                if [ "$verbose" = true ]; then
+                    echo "  Trying alternative naming patterns"
+                fi
                 # Try removing spaces and special characters
                 alt_name=$(echo "$game_name" | tr -d '[:space:]-' | tr '[:upper:]' '[:lower:]')
                 game_dir=$(find "$common_dir" -maxdepth 1 -type d -iname "*$alt_name*" -print -quit)
             fi
             
+            # If still not found, try looking for the game ID in the directory name
+            if [ ! -d "$game_dir" ]; then
+                if [ "$verbose" = true ]; then
+                    echo "  Trying to find directory containing game ID: $game_id"
+                fi
+                game_dir=$(find "$common_dir" -maxdepth 1 -type d -name "*$game_id*" -print -quit)
+            fi
+            
             if [ -n "$game_dir" ] && [ -d "$game_dir" ]; then
+                if [ "$verbose" = true ]; then
+                    echo "  Found game directory at: $game_dir"
+                fi
                 if [ "$dry_run" = true ]; then
                     echo "DRY RUN: ln -sf \"$game_dir\" \"$vortex_dir/common/$(basename "$game_dir")\""
                 else
@@ -319,6 +342,9 @@ symlink_directories() {
                     echo "    - Exact: $game_name"
                     echo "    - Case-insensitive: $game_name"
                     echo "    - Alternative: $alt_name"
+                    echo "    - Game ID: $game_id"
+                    echo "  Common directory contents:"
+                    ls -l "$common_dir"
                 fi
             fi
         else
