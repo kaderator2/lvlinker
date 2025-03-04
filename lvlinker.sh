@@ -86,7 +86,16 @@ get_vortex_dir() {
     # Create array of non-Steam folders
     non_steam_folders=()
     for id in "${game_ids[@]}"; do
-        if ! grep -q "^$id:" <<< "${valid_games[*]}"; then
+        # Check if this ID is not in valid_games
+        is_steam_game=false
+        for game in "${valid_games[@]}"; do
+            if [[ "$game" == "$id:"* ]]; then
+                is_steam_game=true
+                break
+            fi
+        done
+        
+        if ! $is_steam_game; then
             non_steam_folders+=("$id")
         fi
     done
