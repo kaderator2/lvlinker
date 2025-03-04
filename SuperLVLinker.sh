@@ -227,6 +227,10 @@ setup_wine_prefix() {
     wine reg add "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\FileSystem" /v "NtfsAllowExtendedCharacterIn8dot3Name" /t REG_DWORD /d 1 /f >/dev/null 2>&1
     wine reg add "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\FileSystem" /v "SymlinkLocalToLocalEvaluation" /t REG_DWORD /d 1 /f >/dev/null 2>&1
     
+    # Enable additional symlink settings
+    wine reg add "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\FileSystem" /v "SymlinkEvaluation" /t REG_DWORD /d 1 /f >/dev/null 2>&1
+    wine reg add "HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\FileSystem" /v "LongPathsEnabled" /t REG_DWORD /d 1 /f >/dev/null 2>&1
+    
     # Enable developer mode for better symlink handling
     wine reg add "HKEY_CURRENT_USER\\Software\\Wine" /v "Developer" /t REG_SZ /d "1" /f >/dev/null 2>&1
     
@@ -241,6 +245,7 @@ Class = "Wine"
 [System]
 SymlinkEvaluation = "LocalToLocal"
 CaseSensitive = 0
+EnableSymlinks = 1
 EOF
     
     # Install required dependencies with winetricks if available
@@ -619,75 +624,77 @@ symlink_directories() {
             # Create parent directory structure
             mkdir -p "$WINE_PREFIX/drive_c/Program Files (x86)/Steam/steamapps/common"
             
-            # Try native Linux symlink first (most reliable)
-            echo -n "Creating native symlink... "
-            ln -sf "$game_dir" "$target_dir"
+            # Get absolute path to game directory
+            abs_game_dir=$(realpath "$game_dir")
+            game_basename=$(basename "$abs_game_dir")
             
-            if [ $? -eq 0 ] && [ -L "$target_dir" ]; then
+            # Create a direct Z: drive mapping for the game directory
+            echo "Creating direct Z: drive mapping for better compatibility..."
+            mkdir -p "$WINE_PREFIX/dosdevices"
+            rm -f "$WINE_PREFIX/dosdevices/z:"
+            ln -sf / "$WINE_PREFIX/dosdevices/z:"
+            
+            # Create a Windows-style path for the Z: drive mapping
+            z_drive_path="Z:$(echo "$abs_game_dir" | sed 's|/|\\\\|g')"
+            
+            # Create a junction point using the Z: drive path
+            echo -n "Creating junction point using Z: drive... "
+            wine cmd /c "mklink /J \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$game_basename\" \"$z_drive_path\"" >/dev/null 2>&1
+            
+            if [ $? -eq 0 ]; then
                 echo "Success!"
                 
-                # Test if the symlink works
-                if [ -d "$target_dir" ] && [ -r "$target_dir" ]; then
-                    echo "Symlink verified and readable"
+                # Verify the junction point
+                echo -n "Verifying junction point... "
+                if wine cmd /c "dir \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$game_basename\"" >/dev/null 2>&1; then
+                    echo "Verified!"
                     
-                    # Create a test file to verify Wine can see it
-                    echo "Testing Wine visibility..."
-                    test_file="$target_dir/.vortex_test"
-                    echo "Test file for Vortex" > "$test_file"
+                    # Count files to verify content
+                    file_count=$(find "$abs_game_dir" -type f | wc -l)
+                    echo "  Found $file_count files in source directory"
                     
-                    if [ -f "$test_file" ]; then
-                        echo "Test file created successfully"
-                        rm -f "$test_file"
+                    # Try to count files through Wine
+                    wine_file_count=$(wine cmd /c "dir /s /b \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$game_basename\" | find /c /v \"\"" 2>/dev/null)
+                    echo "  Files visible to Wine: $wine_file_count"
+                    
+                    # Create a test file to verify Wine can see and write to it
+                    echo "Testing Wine visibility and write access..."
+                    wine cmd /c "echo Test > \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$game_basename\\vortex_test.txt\"" >/dev/null 2>&1
+                    
+                    if [ -f "$abs_game_dir/vortex_test.txt" ]; then
+                        echo "  Test file created successfully through Wine"
+                        rm -f "$abs_game_dir/vortex_test.txt"
                     else
-                        echo "Warning: Could not create test file"
+                        echo "  Warning: Could not create test file through Wine"
                     fi
                 else
-                    echo "Warning: Symlink created but may not be readable"
+                    echo "Failed to verify junction point"
                 fi
             else
-                echo "Failed. Trying Windows junction point..."
+                echo "Junction point failed. Trying direct copy..."
                 
-                # Convert Linux path to Windows-style path
-                windows_game_dir=$(winepath -w "$game_dir")
+                # Create the directory first
+                mkdir -p "$target_dir"
                 
-                # Try creating a Windows junction point
-                wine cmd /c "mklink /J \"C:\\Program Files (x86)\\Steam\\steamapps\\common\\$(basename "$game_dir")\" \"$windows_game_dir\"" >/dev/null 2>&1
-                
-                if [ $? -eq 0 ] && [ -d "$target_dir" ]; then
-                    echo "Junction point created successfully"
+                # Use rsync for copying if available
+                if command -v rsync &> /dev/null; then
+                    echo "Copying game files with rsync (this may take a while)..."
+                    rsync -a --info=progress2 "$abs_game_dir/" "$target_dir/"
+                    if [ $? -eq 0 ]; then
+                        echo "Game files copied successfully with rsync"
+                    else
+                        echo "Error: Failed to copy game files with rsync"
+                        exit 1
+                    fi
                 else
-                    echo "Junction point failed. Trying direct copy..."
-                    
-                    # Create the directory first
-                    mkdir -p "$target_dir"
-                    
-                    # Copy files one by one to avoid directory conflicts
+                    # Fall back to cp
                     echo "Copying game files (this may take a while)..."
-                    find "$game_dir" -type f -print0 | while IFS= read -r -d $'\0' file; do
-                        rel_path="${file#$game_dir/}"
-                        target_file="$target_dir/$rel_path"
-                        mkdir -p "$(dirname "$target_file")"
-                        cp "$file" "$target_file"
-                    done
-                    
+                    cp -r "$abs_game_dir/"* "$target_dir/"
                     if [ $? -eq 0 ]; then
                         echo "Game files copied successfully"
                     else
                         echo "Error: Failed to copy game files"
-                        echo "Trying one last method - rsync..."
-                        
-                        if command -v rsync &> /dev/null; then
-                            rsync -a "$game_dir/" "$target_dir/"
-                            if [ $? -eq 0 ]; then
-                                echo "Game files synced with rsync successfully"
-                            else
-                                echo "Error: All methods failed. Please check permissions and disk space."
-                                exit 1
-                            fi
-                        else
-                            echo "Error: All methods failed and rsync not available."
-                            exit 1
-                        fi
+                        exit 1
                     fi
                 fi
             fi
@@ -779,9 +786,62 @@ symlink_directories() {
     
     echo "Symlinking completed for all selected games."
     
+    # Create registry entries for Vortex to find games
+    create_vortex_registry_entries
+    
     # Verify symlinks
     verify_symlinks
 }
+
+# Function to create registry entries for Vortex
+create_vortex_registry_entries() {
+    echo "Creating registry entries for Vortex to find games..."
+    
+    # Create the base registry key for Vortex
+    wine reg add "HKEY_CURRENT_USER\\Software\\Vortex" /f >/dev/null 2>&1
+    wine reg add "HKEY_CURRENT_USER\\Software\\Vortex\\gameRegistry" /f >/dev/null 2>&1
+    
+    for game_id in "${selected_games[@]}"; do
+        game_name=$(get_game_name "$game_id")
+        
+        # Find game directory
+        game_dir=""
+        for steam_dir in "${valid_steam_dirs[@]}"; do
+            local steamapps_dir="$steam_dir/steamapps"
+            local common_dir="$steamapps_dir/common"
+            local manifest_file="$steamapps_dir/appmanifest_$game_id.acf"
+            
+            if [ -f "$manifest_file" ]; then
+                install_dir=$(grep -oP '"installdir"\s+"\K[^"]+' "$manifest_file")
+                if [ -n "$install_dir" ] && [ -d "$common_dir/$install_dir" ]; then
+                    game_dir="$common_dir/$install_dir"
+                    break
+                fi
+                
+                # Try with game name
+                if [ -d "$common_dir/$game_name" ]; then
+                    game_dir="$common_dir/$game_name"
+                    break
+                fi
+            fi
+        done
+        
+        if [ -z "$game_dir" ]; then
+            echo "Could not find source directory for $game_name, skipping registry entry"
+            continue
+        fi
+        
+        game_basename=$(basename "$game_dir")
+        windows_path="C:\\Program Files (x86)\\Steam\\steamapps\\common\\$game_basename"
+        
+        # Create registry entries for this game
+        echo "Creating registry entry for $game_name..."
+        
+        # Main game registry entry
+        wine reg add "HKEY_CURRENT_USER\\Software\\Vortex\\gameRegistry\\$game_id" /v "gamePath" /t REG_SZ /d "$windows_path" /f >/dev/null 2>&1
+        wine reg add "HKEY_CURRENT_USER\\Software\\Vortex\\gameRegistry\\$game_id" /v "gameName" /t REG_SZ /d "$game_name" /f >/dev/null 2>&1
+        wine reg add "HKEY_CURRENT_USER\\Software\\Vortex\\gameRegistry\\$game_id" /v "discovered" /t REG_DWORD /d 1 /f >/dev/null 2>&1
+    }
 
 # Function to verify symlinks
 verify_symlinks() {
@@ -927,6 +987,12 @@ launch_vortex() {
     export DISPLAY=":0"
     export PULSE_SERVER="unix:$XDG_RUNTIME_DIR/pulse/native"
     
+    # Enable file system redirection for better compatibility
+    export WINEDLLOVERRIDES="$WINEDLLOVERRIDES;fusion=n;mscoree=n"
+    
+    # Enable better symlink handling
+    export WINE_ENABLE_SYMLINKS=1
+    
     # Create a clean environment with necessary variables
     env -i \
         HOME="$HOME" \
@@ -936,7 +1002,8 @@ launch_vortex() {
         WINEPREFIX="$WINE_PREFIX" \
         WINEARCH="win64" \
         WINEDEBUG="-all,err+all,fixme+all" \
-        WINEDLLOVERRIDES="winemenubuilder.exe=d" \
+        WINEDLLOVERRIDES="winemenubuilder.exe=d;fusion=n;mscoree=n" \
+        WINE_ENABLE_SYMLINKS=1 \
         DISPLAY="$DISPLAY" \
         XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
         PULSE_SERVER="$PULSE_SERVER" \
