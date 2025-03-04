@@ -143,9 +143,14 @@ auto_detect_vortex() {
 
 # Function to ask user for Vortex compatdata ID
 get_vortex_dir() {
-    # Create array of non-Steam folders
+    # Create array of non-Steam folders, explicitly excluding 1000000 from game detection
     non_steam_folders=()
     for id in "${game_ids[@]}"; do
+        # Skip the Vortex installation ID
+        if [ "$id" == "1000000" ]; then
+            continue
+        fi
+        
         # Check if this ID is not in valid_games
         is_steam_game=false
         for game in "${valid_games[@]}"; do
@@ -159,6 +164,9 @@ get_vortex_dir() {
             non_steam_folders+=("$id")
         fi
     done
+    
+    # Always include 1000000 as a potential Vortex folder
+    non_steam_folders+=("1000000")
     
     if [ ${#non_steam_folders[@]} -eq 0 ]; then
         echo "Error: No non-Steam folders found. Vortex should be in a separate compatdata folder."
@@ -203,16 +211,22 @@ get_vortex_dir() {
             vortex_id="$custom_id"
             vortex_dir="$STEAM_COMPATDATA/$vortex_id"
             
-            # Verify the directory exists
+            # Verify the directory exists, but don't prompt to create if it's 1000000
             if [ ! -d "$vortex_dir" ]; then
-                echo "Warning: Directory $vortex_dir does not exist"
-                read -p "Do you want to create it? (y/n): " create_choice
-                if [ "$create_choice" == "y" ]; then
-                    mkdir -p "$vortex_dir"
-                    echo "Created Vortex directory at $vortex_dir"
-                else
-                    echo "Aborting..."
+                if [ "$custom_id" == "1000000" ]; then
+                    echo "Error: Vortex directory not found at $vortex_dir"
+                    echo "Please make sure Vortex is properly installed using install_vortex.sh"
                     exit 1
+                else
+                    echo "Warning: Directory $vortex_dir does not exist"
+                    read -p "Do you want to create it? (y/n): " create_choice
+                    if [ "$create_choice" == "y" ]; then
+                        mkdir -p "$vortex_dir"
+                        echo "Created Vortex directory at $vortex_dir"
+                    else
+                        echo "Aborting..."
+                        exit 1
+                    fi
                 fi
             fi
             
@@ -315,6 +329,7 @@ symlink_directories() {
 
         # Documents symlink
         echo -n "  Symlinking Documents... "
+        mkdir -p "$game_compatdata_dir/pfx/drive_c/users/steamuser/Documents"
         if [ "$dry_run" = true ]; then
             echo "DRY RUN: ln -sf \"$game_compatdata_dir/pfx/drive_c/users/steamuser/Documents\" \"$vortex_compatdata_dir/pfx/drive_c/users/steamuser/Documents\""
         else
