@@ -62,7 +62,7 @@ check_required_libs() {
     # Check 64-bit libraries
     missing_64bit=()
     for lib in "${required_64bit_libs[@]}"; do
-        if ! dpkg -l "$lib" >/dev/null 2>&1; then
+        if ! pacman -Q "$lib" >/dev/null 2>&1; then
             missing_64bit+=("$lib")
         fi
     done
@@ -70,7 +70,7 @@ check_required_libs() {
     # Check 32-bit libraries
     missing_32bit=()
     for lib in "${required_32bit_libs[@]}"; do
-        if ! dpkg -l "$lib" >/dev/null 2>&1; then
+        if ! pacman -Q "$lib" >/dev/null 2>&1; then
             missing_32bit+=("$lib")
         fi
     done
