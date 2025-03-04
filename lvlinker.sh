@@ -4,7 +4,6 @@
 STEAMCMD_APP_LIST="https://api.steampowered.com/ISteamApps/GetAppList/v2/"
 DEFAULT_COMPATDATA=(
     "$HOME/.local/share/Steam/steamapps/compatdata"
-    "/mnt/SlowGames/SteamLibrary/steamapps/compatdata"
 )
 BACKUP_DIR="$HOME/vortex_backups"
 LOG_FILE="/tmp/lvlinker.log"
@@ -16,10 +15,14 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 usage() {
     echo "Usage: $0 [options]"
     echo "Options:"
-    echo "  -h, --help       Show this help message and exit"
-    echo "  -d, --dry-run    Show what would be done without making changes"
-    echo "  -b, --backup     Create backup before making changes"
-    echo "  -v, --verbose    Show detailed output"
+    echo "  -h, --help         Show this help message and exit"
+    echo "  -d, --dry-run      Show what would be done without making changes"
+    echo "  -b, --backup       Create backup before making changes"
+    echo "  -v, --verbose      Show detailed output"
+    echo "  -p, --path PATH    Add custom Steam compatdata path"
+    echo
+    echo "Example:"
+    echo "  $0 -p /mnt/SlowGames/SteamLibrary/steamapps/compatdata"
     exit 1
 }
 
@@ -105,12 +108,13 @@ auto_detect_vortex() {
         # Check all compatdata directories
         for compatdata in "${valid_compatdata[@]}"; do
             vortex_path="$compatdata/$id/pfx/drive_c/Program Files/Black Tree Gaming Ltd/Vortex"
-        if [ -d "$vortex_path" ]; then
-            echo "Found Vortex in folder $id"
-            vortex_id="$id"
-            vortex_dir="$STEAM_COMPATDATA/$vortex_id"
-            return 0
-        fi
+            if [ -d "$vortex_path" ]; then
+                echo "Found Vortex in folder $id"
+                vortex_id="$id"
+                vortex_dir="$compatdata/$vortex_id"
+                return 0
+            fi
+        done
     done
     echo "Not found"
     return 1
@@ -266,6 +270,7 @@ symlink_directories() {
 dry_run=false
 do_backup=false
 verbose=false
+custom_paths=()
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -285,12 +290,28 @@ while [[ $# -gt 0 ]]; do
             verbose=true
             shift
             ;;
+        -p|--path)
+            if [ -d "$2" ]; then
+                custom_paths+=("$2")
+                shift 2
+            else
+                echo "Invalid path: $2"
+                exit 1
+            fi
+            ;;
         *)
             echo "Unknown option: $1"
             usage
             ;;
     esac
 done
+
+# Add custom paths to compatdata search
+if [ ${#custom_paths[@]} -gt 0 ]; then
+    for path in "${custom_paths[@]}"; do
+        DEFAULT_COMPATDATA+=("$path")
+    done
+fi
 
 echo "Starting Vortex Linker..."
 echo "Log file: $LOG_FILE"
