@@ -2,7 +2,10 @@
 
 # Configuration
 STEAMCMD_APP_LIST="https://api.steampowered.com/ISteamApps/GetAppList/v2/"
-STEAM_COMPATDATA="$HOME/.local/share/Steam/steamapps/compatdata"
+DEFAULT_COMPATDATA=(
+    "$HOME/.local/share/Steam/steamapps/compatdata"
+    "/mnt/SlowGames/SteamLibrary/steamapps/compatdata"
+)
 BACKUP_DIR="$HOME/vortex_backups"
 LOG_FILE="/tmp/lvlinker.log"
 
@@ -53,13 +56,27 @@ get_game_name() {
 
 # Function to scan compatdata folder and find games
 scan_compatdata() {
-    echo -n "Scanning compatdata folder... "
-    if [ ! -d "$STEAM_COMPATDATA" ]; then
-        echo "Error: compatdata directory not found at $STEAM_COMPATDATA"
+    echo -n "Scanning compatdata folders... "
+    
+    # Find all valid compatdata directories
+    valid_compatdata=()
+    for path in "${DEFAULT_COMPATDATA[@]}"; do
+        if [ -d "$path" ]; then
+            valid_compatdata+=("$path")
+        fi
+    done
+    
+    if [ ${#valid_compatdata[@]} -eq 0 ]; then
+        echo "Error: No valid compatdata directories found"
         exit 1
     fi
-
-    game_ids=($(ls "$STEAM_COMPATDATA"))
+    
+    # Collect game IDs from all valid directories
+    game_ids=()
+    for compatdata in "${valid_compatdata[@]}"; do
+        ids=($(ls "$compatdata"))
+        game_ids+=("${ids[@]}")
+    done
     valid_games=()
     
     echo "Done!"
@@ -85,7 +102,9 @@ scan_compatdata() {
 auto_detect_vortex() {
     echo -n "Attempting to auto-detect Vortex installation... "
     for id in "${non_steam_folders[@]}"; do
-        vortex_path="$STEAM_COMPATDATA/$id/pfx/drive_c/Program Files/Black Tree Gaming Ltd/Vortex"
+        # Check all compatdata directories
+        for compatdata in "${valid_compatdata[@]}"; do
+            vortex_path="$compatdata/$id/pfx/drive_c/Program Files/Black Tree Gaming Ltd/Vortex"
         if [ -d "$vortex_path" ]; then
             echo "Found Vortex in folder $id"
             vortex_id="$id"
@@ -199,7 +218,19 @@ symlink_directories() {
     vortex_compatdata_dir="$vortex_dir/compatdata"
     
     for game_id in "${selected_games[@]}"; do
-        game_compatdata_dir="$STEAM_COMPATDATA/$game_id"
+        # Find which compatdata directory contains this game
+        game_compatdata_dir=""
+        for compatdata in "${valid_compatdata[@]}"; do
+            if [ -d "$compatdata/$game_id" ]; then
+                game_compatdata_dir="$compatdata/$game_id"
+                break
+            fi
+        done
+        
+        if [ -z "$game_compatdata_dir" ]; then
+            echo "Error: Could not find game $game_id in any compatdata directory"
+            continue
+        fi
         
         echo "Processing game ID: $game_id"
         
