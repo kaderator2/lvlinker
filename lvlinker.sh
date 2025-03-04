@@ -273,22 +273,31 @@ symlink_directories() {
         if [ -d "$common_dir" ]; then
             # Find the game directory (using the game name from valid_games)
             game_name=$(echo "${valid_games[@]}" | grep -oP "$game_id:\K[^:]+")
+            
+            # Try exact match first
             if [ -n "$game_name" ] && [ -d "$common_dir/$game_name" ]; then
+                game_dir="$common_dir/$game_name"
+            else
+                # Try case-insensitive match if exact match fails
+                game_dir=$(find "$common_dir" -maxdepth 1 -type d -iname "$game_name" -print -quit)
+            fi
+            
+            if [ -n "$game_dir" ] && [ -d "$game_dir" ]; then
                 if [ "$dry_run" = true ]; then
-                    echo "DRY RUN: ln -sf \"$common_dir/$game_name\" \"$vortex_dir/common/$game_name\""
+                    echo "DRY RUN: ln -sf \"$game_dir\" \"$vortex_dir/common/$(basename "$game_dir")\""
                 else
                     mkdir -p "$vortex_dir/common"
-                    ln -sf "$common_dir/$game_name" "$vortex_dir/common/$game_name" || {
+                    ln -sf "$game_dir" "$vortex_dir/common/$(basename "$game_dir")" || {
                         echo "Failed to symlink game files for $game_id"
                         exit 1
                     }
                     echo "Done!"
                 fi
             else
-                echo "Skipped (game directory not found)"
+                echo "Skipped (game directory not found in $common_dir)"
             fi
         else
-            echo "Skipped (common directory not found)"
+            echo "Skipped (common directory not found at $common_dir)"
         fi
     done
     
