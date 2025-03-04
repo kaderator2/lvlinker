@@ -33,10 +33,16 @@ get_game_name() {
     
     # Query Steam API
     local url="https://store.steampowered.com/api/appdetails?appids=$appid"
-    local response=$(curl -s "$url")
+    local response=$(curl -s "$url" | tr -d '\0')
+    
+    # Check if response is valid JSON
+    if ! echo "$response" | jq empty >/dev/null 2>&1; then
+        return 1
+    fi
+    
     local name=$(echo "$response" | jq -r ".\"$appid\".data.name // empty")
     
-    if [ -n "$name" ]; then
+    if [ -n "$name" ] && [ "$name" != "null" ]; then
         echo "$name" > "$cache_file"
         echo "$name"
         return 0
