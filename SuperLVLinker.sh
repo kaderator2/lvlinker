@@ -49,16 +49,16 @@ check_required_libs() {
     
     # Required libraries for 64-bit Wine
     required_64bit_libs=(
-        "libc6"
-        "libstdc++6"
-        "libgcc-s1"
+        "glibc"
+        "gcc-libs"
+        "libstdc++5"
     )
     
     # Required 32-bit libraries for compatibility
     required_32bit_libs=(
-        "libc6:i386"
-        "libstdc++6:i386"
-        "libgcc-s1:i386"
+        "lib32-glibc"
+        "lib32-gcc-libs"
+        "lib32-libstdc++5"
     )
     
     # Check 64-bit libraries
