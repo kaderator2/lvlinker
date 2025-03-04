@@ -81,6 +81,22 @@ scan_compatdata() {
     fi
 }
 
+# Function to detect Vortex folder automatically
+auto_detect_vortex() {
+    echo -n "Attempting to auto-detect Vortex installation... "
+    for id in "${non_steam_folders[@]}"; do
+        vortex_path="$STEAM_COMPATDATA/$id/pfx/drive_c/Program Files/Black Tree Gaming Ltd/Vortex"
+        if [ -d "$vortex_path" ]; then
+            echo "Found Vortex in folder $id"
+            vortex_id="$id"
+            vortex_dir="$STEAM_COMPATDATA/$vortex_id"
+            return 0
+        fi
+    done
+    echo "Not found"
+    return 1
+}
+
 # Function to ask user for Vortex compatdata ID
 get_vortex_dir() {
     # Create array of non-Steam folders
@@ -105,6 +121,12 @@ get_vortex_dir() {
         exit 1
     fi
     
+    # Try to auto-detect Vortex first
+    if auto_detect_vortex; then
+        return
+    fi
+    
+    # If auto-detect fails, ask user to select
     echo "Please select the Vortex installation from the following non-Steam folders:"
     local i=1
     for id in "${non_steam_folders[@]}"; do
