@@ -357,9 +357,8 @@ symlink_directories() {
                 fi
                 
                 # Create symlink
-                ln -sf "$game_docs_dir" "$WINE_PREFIX/drive_c/users/$USER/Documents/$pattern" || {
+                ln -sf "$game_docs_dir" "$WINE_PREFIX/drive_c/users/$USER/Documents/$pattern" || \
                     echo "Failed to symlink game documents for $game_name"
-                }
                 echo "Done!"
             fi
         else
